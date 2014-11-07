@@ -1,5 +1,5 @@
 CS5413 := hp_mod
-CS5413_MODNAME := raspberry_honey
+CS5413_MODNAME := hp
 DIST_FILE=sniffer.tar.gz
 
 EXTRA_CFLAGS = -O3

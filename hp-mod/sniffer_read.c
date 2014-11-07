@@ -10,50 +10,17 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <assert.h>
+#include <time.h>
 #include <getopt.h>
 #include "hp_ioctl.h"
 
 static char * program_name;
-static char * dev_file = "/dev/sniffer";
+static char * dev_file = "/dev/honeypi";
 
 void usage()
 {
-    fprintf(stderr, "Usage: %s [-i input_file] [-o output_file]\n", program_name);
-    exit(EXIT_FAILURE);
-}
-
-int print_packet(char * pkt, int len, int out_fd)
-{
-    /* print format is :
-     * src_ip:src_port -> dst_ip:dst_port
-     * pkt[0] pkt[1] ...    pkt[64] \n
-     * ...
-     * where pkt[i] is a hex byte */
-    uint32_t src_ip, dst_ip;
-    uint16_t src_p, dst_p;
-    uint8_t * data;
-    int i;
-    struct in_addr saddr;
-    struct in_addr daddr;
-
-    src_ip = ((uint32_t*)(pkt))[0];
-    dst_ip = ((uint32_t*)(pkt))[1];
-    src_p = ((uint16_t*)(pkt+8))[0];
-    dst_p = ((uint16_t*)(pkt+8))[1];
-
-    data = (uint8_t*)(pkt+12);
-
-
-    saddr.s_addr = src_ip;
-    daddr.s_addr = dst_ip;
-    dprintf(out_fd,"%s:%u -> %s:%u\n", inet_ntoa(saddr),src_p,inet_ntoa(daddr),dst_p);
-    for (i =0; i < len-12; i++) {
-      if(i!=0 && i%64==0) dprintf(out_fd,"\n");
-      dprintf(out_fd,"%02X ",data[i]);
-    }
-    dprintf(out_fd,"\n");
-    free(pkt);
-    return 0;
+  fprintf(stderr, "Usage: %s [-i input_file] [-o output_file]\n", program_name);
+  exit(EXIT_FAILURE);
 }
 
 
@@ -77,42 +44,68 @@ char* read_packet(int in_fd, int *len) {
 
 int main(int argc, char **argv)
 {
-    int c;
-    char *input_file, *output_file = NULL;
-    int out_fd = stdout;
-    int in_fd;
-    program_name = argv[0];
+  int c;
+  char *input_file, *output_file = NULL;
+  int out_fd = stdout;
+  int in_fd;
+  program_name = argv[0];
 
-    input_file= dev_file;
+  input_file= dev_file;
 
-    while((c = getopt(argc, argv, "i:o:")) != -1) {
-        switch (c) {
-        case 'i':
-            input_file = strdup(optarg);
-            break;
-        case 'o':
-            output_file = strdup(optarg);
-            break;
-        default:
-            usage();
-        }
+  while((c = getopt(argc, argv, "i:o:")) != -1) {
+    switch (c) {
+      case 'i':
+        input_file = strdup(optarg);
+        break;
+      case 'o':
+        output_file = strdup(optarg);
+        break;
+      default:
+        usage();
     }
+  }
 
-    in_fd = open(input_file, O_RDWR);
-    if(output_file)
-    {
-      out_fd = open(output_file, O_CREAT| O_RDWR, 0640);
-    } else {
-      out_fd = open("/dev/tty", O_WRONLY);
+  in_fd = open(input_file, O_RDWR);
+  if(output_file)
+  {
+    out_fd = open(output_file, O_CREAT| O_RDWR, 0640);
+  } else {
+    out_fd = open("/dev/tty", O_WRONLY);
+  }
+
+  struct timespec start, end;
+
+  double bytes = 0.0;
+  double time =0.0;
+  double packets =0.0;
+  int i = 20000;
+  while(1) {
+    int len = 0;
+
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start); // get initial time-stamp
+
+    char * data = read_packet(in_fd,&len);
+
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);   // get final time-stamp
+
+    double t_ns = (double)(end.tv_sec - start.tv_sec) * 1.0e9 +
+      (double)(end.tv_nsec - start.tv_nsec);
+    time+=t_ns;
+    packets += 1.0;
+    bytes+=(double)len;
+    // subtract time-stamps and
+    // multiply to get elapsed
+    // time in ns
+    free(data);
+    if (!(i--)) {
+      printf("packets/second = %f\n",(packets/(time*(1e-9))));
+      printf("Mbytes/second = %f\n",((bytes*1e-6)/(time*(1e-9))));
+      bytes = 0.0;
+      packets = 0.0;
+      time = 0.0;
+      i = 20000;
     }
+  }
 
-
-    while(1) {
-      int len;
-      char * data = read_packet(in_fd,&len);
-      if(!data) break;
-      print_packet(data,len,out_fd);
-    }
-
-    return 0;
+  return 0;
 }

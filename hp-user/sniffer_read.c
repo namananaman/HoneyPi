@@ -12,7 +12,9 @@
 #include <assert.h>
 #include <time.h>
 #include <getopt.h>
-#include "hp_ioctl.h"
+#include <linux/ip.h>
+#include <linux/tcp.h>
+#include <hp_ioctl.h>
 
 static char * program_name;
 static char * dev_file = "/dev/honeypi";
@@ -82,29 +84,30 @@ int main(int argc, char **argv)
   while(1) {
     int len = 0;
 
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start); // get initial time-stamp
 
     char * data = read_packet(in_fd,&len);
 
-    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);   // get final time-stamp
 
-    double t_ns = (double)(end.tv_sec - start.tv_sec) * 1.0e9 +
-      (double)(end.tv_nsec - start.tv_nsec);
-    time+=t_ns;
-    packets += 1.0;
-    bytes+=(double)len;
     // subtract time-stamps and
     // multiply to get elapsed
     // time in ns
-    free(data);
-    if (!(i--)) {
-      printf("packets/second = %f\n",(packets/(time*(1e-9))));
-      printf("Mbytes/second = %f\n",((bytes*1e-6)/(time*(1e-9))));
-      bytes = 0.0;
-      packets = 0.0;
-      time = 0.0;
-      i = 20000;
+    int j;
+    struct iphdr * ip = (struct iphdr*)(data);
+    switch (ip->protocol) {
+    case IPPROTO_TCP:
+      printf("tcp packet\n");
+      break;
+    case IPPROTO_UDP:
+      printf("udp packet\n");
+      break;
+    case IPPROTO_ICMP:
+      printf("icmp packet\n");
+      break;
     }
+    //struct tcphdr *tcp = (void *) ip + ip->ihl*4;
+
+    //printf("tcp->src = %d, tcp->dst = %d\n",htons(tcp->source), htons(tcp->dest));
+    free(data);
   }
 
   return 0;

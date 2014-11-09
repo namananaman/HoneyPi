@@ -29,12 +29,11 @@
 #include<linux/sched.h>
 #include <asm/uaccess.h>
 
-
-#include "hp_ioctl.h"
+#include <hp_ioctl.h>
 
 DECLARE_WAIT_QUEUE_HEAD(wq);
-MODULE_AUTHOR("Maxwell Dergosits");
-MODULE_DESCRIPTION("CS5413 Packet Filter / Sniffer Framework");
+MODULE_AUTHOR("Maxwell Dergosits, Naman Agarwal, Rob McGuinness");
+MODULE_DESCRIPTION("HoneyPi - A Distributed Honeypot for Raspberry Pis");
 MODULE_LICENSE("Dual BSD/GPL");
 
 
@@ -323,12 +322,3 @@ static void __exit sniffer_exit(void)
 
 module_init(sniffer_init);
 module_exit(sniffer_exit);
-
-
-
-
-
-
-
-
-

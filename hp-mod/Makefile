@@ -1,5 +1,5 @@
-CS5413 := hp_mod
-CS5413_MODNAME := hp
+CS5413 := honeypi_mod
+CS5413_MODNAME := honeypi
 DIST_FILE=sniffer.tar.gz
 
 EXTRA_CFLAGS = -O3
@@ -23,7 +23,6 @@ default:
 
 clean:
 	$(MAKE) -C $(KDIR) SUBDIRS=$(PWD) clean
-	rm -f sniffer_control sniffer_read *.tar.gz *.dev
 
 endif
 

@@ -14,5 +14,7 @@ user:
 clean_mod:
 	make -C $(PWD)/hp-mod clean
 
+clean_user:
+	make -C $(PWD)/hp-user clean
 
-clean: clean_mod
+clean: clean_mod clean_user

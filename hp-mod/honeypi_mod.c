@@ -36,6 +36,14 @@ MODULE_AUTHOR("Maxwell Dergosits, Naman Agarwal, Rob McGuinness");
 MODULE_DESCRIPTION("HoneyPi - A Distributed Honeypot for Raspberry Pis");
 MODULE_LICENSE("Dual BSD/GPL");
 
+#define RING_BUFFER_SIZE (256)
+struct sk_buff* ring_buffer[RING_BUFFER_SIZE];
+volatile uint64_t head = 0;
+volatile uint64_t tail = 0;
+
+#define inc_rb(x) (x++)
+#define empty_rb() (head == tail)
+#define index_rb(x) (x%RING_BUFFER_SIZE)
 
 static dev_t sniffer_dev;
 static struct cdev sniffer_cdev;
@@ -75,7 +83,7 @@ char buffer_is_empty(void) {
   char empty;
   unsigned long flags;
   local_irq_save(flags);
-  empty = list_empty(&skbs);
+  empty = empty_rb();
   if(empty) packet_availble = 0;
   local_irq_restore(flags);
   return empty;
@@ -86,7 +94,6 @@ char buffer_is_empty(void) {
   static ssize_t
 sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
-  struct skb_list * first;
   struct sk_buff *skb;
   struct tcphdr *tcph;
   struct iphdr *iph;
@@ -104,8 +111,9 @@ sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
     //spin_lock(&buffer_lock); {
     packet_offset = 0;
     local_irq_save(flags);
-    first  = list_first_entry(&skbs, struct skb_list, list);
-    skb = first->skb;
+    skb  = ring_buffer[index_rb(tail)];
+    ring_buffer[index_rb(tail)] = NULL;
+    inc_rb(tail);
     iph = ip_hdr(skb);
     tcph = ip_tcp_hdr(iph);
     packet_size = skb->len;
@@ -113,10 +121,8 @@ sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 
     if(skb_copy_bits(skb,0,packet_data,packet_size)) {
     }
-    list_del(&first->list);
     local_irq_restore(flags);
     kfree_skb(skb);
-    kfree(first);
   }
 
   if (packet_size == packet_offset) {
@@ -201,7 +207,11 @@ void buffer_data(struct sk_buff * skb) {
   packet_availble=1;
 
   local_irq_save(flags);
-  list_add_tail(&(new_node->list),&skbs);
+  if (ring_buffer[index_rb(head)] != NULL) {
+    kfree_skb(ring_buffer[index_rb(head)]);
+  }
+  ring_buffer[index_rb(head)] = skb;
+  inc_rb(head);
   local_irq_restore(flags);
 
   wake_up_interruptible(&wq);
@@ -212,7 +222,7 @@ void buffer_data(struct sk_buff * skb) {
 
 
 
-static unsigned int sniffer_nf_hook(unsigned int hook, struct sk_buff* skb,
+static unsigned int sniffer_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
     const struct net_device *indev, const struct net_device *outdev,
     int (*okfn) (struct sk_buff*))
 {

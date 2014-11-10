@@ -1,6 +1,12 @@
 PWD=$(shell pwd)
 CC=gcc
 CFLAGS=-I$(PWD)/../include
+EXEC=hp-user
 
-hp-user: sniffer_read.c
+default: $(EXEC)
+
+$(EXEC): sniffer_read.c
 	$(CC) $(CFLAGS) -o hp-user sniffer_read.c
+
+clean:
+	rm $(EXEC)

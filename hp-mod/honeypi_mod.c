@@ -50,21 +50,9 @@ static struct cdev sniffer_cdev;
 static int sniffer_minor = 1;
 atomic_t refcnt;
 
-static int hook_chain = NF_INET_LOCAL_IN;
+//static int hook_chain = NF_INET_LOCAL_IN;
 static int hook_prio = NF_IP_PRI_FIRST;
 struct nf_hook_ops nf_hook_ops;
-
-
-// skb buffer between kernel and user space
-struct list_head skbs;
-
-// skb wrapper for buffering
-struct skb_list
-{
-  struct list_head list;
-  struct sk_buff *skb;
-  int offset;
-};
 
 
 
@@ -95,8 +83,6 @@ char buffer_is_empty(void) {
 sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
   struct sk_buff *skb;
-  struct tcphdr *tcph;
-  struct iphdr *iph;
   int left;
   int len; unsigned long flags;
 
@@ -114,8 +100,6 @@ sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
     skb  = ring_buffer[index_rb(tail)];
     ring_buffer[index_rb(tail)] = NULL;
     inc_rb(tail);
-    iph = ip_hdr(skb);
-    tcph = ip_tcp_hdr(iph);
     packet_size = skb->len;
     packet_data =kmalloc(packet_size,GFP_ATOMIC);
 
@@ -142,193 +126,192 @@ sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
   }
   atomic_sub(1,&refcnt);
   return len;
-}
-
-static int sniffer_fs_open(struct inode *inode, struct file *file)
-{
-  struct cdev *cdev = inode->i_cdev;
-  int cindex = iminor(inode);
-
-  if (!cdev) {
-    printk(KERN_ERR "cdev error\n");
-    return -ENODEV;
   }
 
-  if (cindex != 0) {
-    printk(KERN_ERR "Invalid cindex number %d\n", cindex);
-    return -ENODEV;
-  }
+  static int sniffer_fs_open(struct inode *inode, struct file *file)
+  {
+    struct cdev *cdev = inode->i_cdev;
+    int cindex = iminor(inode);
 
-  return 0;
-}
-
-static int sniffer_fs_release(struct inode *inode, struct file *file)
-{
-  return 0;
-}
-
-static long sniffer_fs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
-{
-  long err =0 ;
-  if (_IOC_TYPE(cmd) != SNIFFER_IOC_MAGIC)
-    return -ENOTTY;
-  if (_IOC_NR(cmd) > SNIFFER_IOC_MAXNR)
-    return -ENOTTY;
-  if (_IOC_DIR(cmd) & _IOC_READ)
-    err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
-  if (_IOC_DIR(cmd) & _IOC_WRITE)
-    err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
-  if (err)
-    return -EFAULT;
-
-  return err;
-}
-
-static struct file_operations sniffer_fops = {
-  .open = sniffer_fs_open,
-  .release = sniffer_fs_release,
-  .read = sniffer_fs_read,
-  .unlocked_ioctl = sniffer_fs_ioctl,
-  .owner = THIS_MODULE,
-};
-
-atomic64_t n_bytes;
-atomic64_t n_packets;
-
-void buffer_data(struct sk_buff * skb) {
-  struct skb_list * new_node =  kmalloc(sizeof(struct skb_list), GFP_ATOMIC);
-  unsigned long flags;
-
-  atomic64_add(1,&n_packets);
-  atomic64_add(skb->len,&n_bytes);
-
-  new_node->skb = skb;
-  new_node->offset=0;
-  packet_availble=1;
-
-  local_irq_save(flags);
-  if (ring_buffer[index_rb(head)] != NULL) {
-    kfree_skb(ring_buffer[index_rb(head)]);
-  }
-  ring_buffer[index_rb(head)] = skb;
-  inc_rb(head);
-  local_irq_restore(flags);
-
-  wake_up_interruptible(&wq);
-
-}
-
-
-
-
-
-static unsigned int sniffer_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
-    const struct net_device *indev, const struct net_device *outdev,
-    int (*okfn) (struct sk_buff*))
-{
-  struct iphdr *iph = ip_hdr(skb);
-  if (iph->protocol == IPPROTO_TCP) {
-    struct tcphdr *tcph = ip_tcp_hdr(iph);
-
-    if (ntohs(tcph->dest) == 22) {
-      return NF_ACCEPT;
+    if (!cdev) {
+      printk(KERN_ERR "cdev error\n");
+      return -ENODEV;
     }
+
+    if (cindex != 0) {
+      printk(KERN_ERR "Invalid cindex number %d\n", cindex);
+      return -ENODEV;
+    }
+
+    return 0;
   }
 
-  buffer_data(skb);
-  return NF_STOLEN;
-}
-
-
-char * procfs_name = "honeypi";
-
-static int sniffer_proc_show(struct seq_file *m, void *v) {
-
-  seq_printf(m,"Packets stolen by filter: %ld\n",atomic64_read(&n_packets));
-  seq_printf(m,"Bytes stolen by filter: %ld\n",atomic64_read(&n_bytes));
-  return 0;
-
-}
-
-static int sniffer_proc_open(struct inode *inode, struct  file *file) {
-  return single_open(file, sniffer_proc_show, NULL);
-}
-
-static const struct file_operations sniffer_proc_fops = {
-  .owner = THIS_MODULE,
-  .open = sniffer_proc_open,
-  .read = seq_read,
-  .llseek = seq_lseek,
-  .release = single_release,
-};
-
-
-
-int init_proc(void)
-{
-  proc_create(procfs_name, 0, NULL, &sniffer_proc_fops);
-  return 0; /* everything is ok */
-}
-
-static int __init sniffer_init(void)
-{
-  int status = 0;
-  atomic_set(&refcnt,0);
-  atomic64_set(&n_packets,0);
-  atomic64_set(&n_bytes,0);
-
-  init_proc();
-  printk(KERN_DEBUG "sniffer_init\n");
-
-  status = alloc_chrdev_region(&sniffer_dev, 0, sniffer_minor, "sniffer");
-  if (status <0) {
-    printk(KERN_ERR "alloc_chrdev_retion failed %d\n", status);
-    goto out;
+  static int sniffer_fs_release(struct inode *inode, struct file *file)
+  {
+    return 0;
   }
 
-  cdev_init(&sniffer_cdev, &sniffer_fops);
-  status = cdev_add(&sniffer_cdev, sniffer_dev, sniffer_minor);
-  if (status < 0) {
-    printk(KERN_ERR "cdev_add failed %d\n", status);
-    goto out_cdev;
+  static long sniffer_fs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+  {
+    long err =0 ;
+    if (_IOC_TYPE(cmd) != SNIFFER_IOC_MAGIC)
+      return -ENOTTY;
+    if (_IOC_NR(cmd) > SNIFFER_IOC_MAXNR)
+      return -ENOTTY;
+    if (_IOC_DIR(cmd) & _IOC_READ)
+      err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
+    if (_IOC_DIR(cmd) & _IOC_WRITE)
+      err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
+    if (err)
+      return -EFAULT;
+
+    return err;
   }
 
-  atomic_set(&refcnt, 0);
-  INIT_LIST_HEAD(&skbs);
+  static struct file_operations sniffer_fops = {
+    .open = sniffer_fs_open,
+    .release = sniffer_fs_release,
+    .read = sniffer_fs_read,
+    .unlocked_ioctl = sniffer_fs_ioctl,
+    .owner = THIS_MODULE,
+  };
 
-  /* register netfilter hook */
-  memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
-  nf_hook_ops.hook = sniffer_nf_hook;
-  nf_hook_ops.pf = PF_INET;
-  nf_hook_ops.hooknum = hook_chain;
-  nf_hook_ops.priority = hook_prio;
-  status = nf_register_hook(&nf_hook_ops);
-  if (status < 0) {
-    printk(KERN_ERR "nf_register_hook failed\n");
-    goto out_add;
+  atomic64_t n_bytes;
+  atomic64_t n_packets;
+
+  void buffer_data(struct sk_buff * skb) {
+    unsigned long flags;
+
+    atomic64_add(1,&n_packets);
+    atomic64_add(skb->len,&n_bytes);
+
+    local_irq_save(flags);
+
+    packet_availble=1;
+
+    if (ring_buffer[index_rb(head)] != NULL) {
+      kfree_skb(ring_buffer[index_rb(head)]);
+    }
+
+    ring_buffer[index_rb(head)] = skb;
+    inc_rb(head);
+
+    local_irq_restore(flags);
+
+    wake_up_interruptible(&wq);
+
   }
 
-  return 0;
+
+
+
+
+  static unsigned int sniffer_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
+      const struct net_device *indev, const struct net_device *outdev,
+      int (*okfn) (struct sk_buff*))
+  {
+    struct iphdr *iph = ip_hdr(skb);
+    if (iph->protocol == IPPROTO_TCP) {
+      struct tcphdr *tcph = ip_tcp_hdr(iph);
+
+      if (ntohs(tcph->dest) == 22) {
+        return NF_ACCEPT;
+      }
+    }
+
+    buffer_data(skb);
+    return NF_STOLEN;
+  }
+
+
+  char * procfs_name = "honeypi";
+
+  static int sniffer_proc_show(struct seq_file *m, void *v) {
+
+    seq_printf(m,"Packets stolen by filter: %ld\n",atomic64_read(&n_packets));
+    seq_printf(m,"Bytes stolen by filter: %ld\n",atomic64_read(&n_bytes));
+    return 0;
+
+  }
+
+  static int sniffer_proc_open(struct inode *inode, struct  file *file) {
+    return single_open(file, sniffer_proc_show, NULL);
+  }
+
+  static const struct file_operations sniffer_proc_fops = {
+    .owner = THIS_MODULE,
+    .open = sniffer_proc_open,
+    .read = seq_read,
+    .llseek = seq_lseek,
+    .release = single_release,
+  };
+
+
+
+  int init_proc(void)
+  {
+    proc_create(procfs_name, 0, NULL, &sniffer_proc_fops);
+    return 0; /* everything is ok */
+  }
+
+  static int __init sniffer_init(void)
+  {
+    int status = 0;
+    atomic_set(&refcnt,0);
+    atomic64_set(&n_packets,0);
+    atomic64_set(&n_bytes,0);
+
+    init_proc();
+    printk(KERN_DEBUG "sniffer_init\n");
+
+    status = alloc_chrdev_region(&sniffer_dev, 0, sniffer_minor, "sniffer");
+    if (status <0) {
+      printk(KERN_ERR "alloc_chrdev_retion failed %d\n", status);
+      goto out;
+    }
+
+    cdev_init(&sniffer_cdev, &sniffer_fops);
+    status = cdev_add(&sniffer_cdev, sniffer_dev, sniffer_minor);
+    if (status < 0) {
+      printk(KERN_ERR "cdev_add failed %d\n", status);
+      goto out_cdev;
+    }
+
+    atomic_set(&refcnt, 0);
+
+    /* register netfilter hook */
+    memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
+    nf_hook_ops.hook = sniffer_nf_hook;
+    nf_hook_ops.pf = PF_INET;
+    nf_hook_ops.hooknum = NF_INET_PRE_ROUTING;
+    nf_hook_ops.priority = hook_prio;
+    status = nf_register_hook(&nf_hook_ops);
+    if (status < 0) {
+      printk(KERN_ERR "nf_register_hook failed\n");
+      goto out_add;
+    }
+
+    return 0;
 
 out_add:
-  cdev_del(&sniffer_cdev);
+    cdev_del(&sniffer_cdev);
 out_cdev:
-  unregister_chrdev_region(sniffer_dev, sniffer_minor);
+    unregister_chrdev_region(sniffer_dev, sniffer_minor);
 out:
-  return status;
-}
-
-static void __exit sniffer_exit(void)
-{
-
-  if (nf_hook_ops.hook) {
-    nf_unregister_hook(&nf_hook_ops);
-    memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
+    return status;
   }
-  cdev_del(&sniffer_cdev);
-  remove_proc_entry(procfs_name,NULL);
-  unregister_chrdev_region(sniffer_dev, sniffer_minor);
-}
 
-module_init(sniffer_init);
-module_exit(sniffer_exit);
+  static void __exit sniffer_exit(void)
+  {
+
+    if (nf_hook_ops.hook) {
+      nf_unregister_hook(&nf_hook_ops);
+      memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
+    }
+    cdev_del(&sniffer_cdev);
+    remove_proc_entry(procfs_name,NULL);
+    unregister_chrdev_region(sniffer_dev, sniffer_minor);
+  }
+
+  module_init(sniffer_init);
+  module_exit(sniffer_exit);

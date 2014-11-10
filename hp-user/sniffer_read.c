@@ -15,6 +15,13 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <hp_ioctl.h>
+#include <signal.h>
+#include "ip-tree.h"
+
+ipt * protocols; //depth 1
+
+ipt * d_ips; // depth 4
+ipt * s_ips; // depth 4
 
 static char * program_name;
 static char * dev_file = "/dev/honeypi";
@@ -44,6 +51,14 @@ char* read_packet(int in_fd, int *len) {
   return packet;
 }
 
+void
+sig_info(int signum)
+{
+   printf("Caught SIGUSR1\n");
+}
+
+
+
 int main(int argc, char **argv)
 {
   int c;
@@ -53,6 +68,8 @@ int main(int argc, char **argv)
   program_name = argv[0];
 
   input_file= dev_file;
+
+  signal(SIGUSR1, sig_info);
 
   while((c = getopt(argc, argv, "i:o:")) != -1) {
     switch (c) {
@@ -93,6 +110,12 @@ int main(int argc, char **argv)
     // time in ns
     int j;
     struct iphdr * ip = (struct iphdr*)(data);
+    char proto = ip->protocol;
+
+    ipt_add(protocols, &proto,1,1,1);
+    ipt_add(s_ips, (char*)&ip->saddr, 4, 1,1);
+    ipt_add(d_ips, (char*)&ip->daddr, 4, 1,1);
+
     switch (ip->protocol) {
     case IPPROTO_TCP:
       printf("tcp packet\n");

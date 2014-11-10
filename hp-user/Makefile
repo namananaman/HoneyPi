@@ -1,12 +1,15 @@
 PWD=$(shell pwd)
 CC=gcc
-CFLAGS=-I$(PWD)/../include
 EXEC=hp-user
+CFLAGS=-I$(PWD)/../include
 
-default: $(EXEC)
+default: ip-tree $(EXEC)
 
-$(EXEC): sniffer_read.c
-	$(CC) $(CFLAGS) -o hp-user sniffer_read.c
+$(EXEC): sniffer_read.c ip-tree.o
+	$(CC) $(CFLAGS) -o hp-user sniffer_read.c ip-tree.o
+
+ip-tree:
+	$(CC) -o ip-tree.o -c ip-tree.c
 
 clean:
 	rm $(EXEC)

@@ -3,10 +3,13 @@ PWD = $(shell pwd)
 .PHONY:
 	module
 
-default: module user
+default: module user util
 
 module:
 	make -C $(PWD)/hp-mod
+
+util:
+	make -C $(PWD)/util
 
 user:
 	make -C $(PWD)/hp-user

@@ -28,7 +28,8 @@
 #include <linux/sched.h>
 #include <asm/uaccess.h>
 
-#include <hp_ioctl.h>
+#include "hp_ioctl.h"
+#include "sha256.h"
 
 MODULE_AUTHOR("Maxwell Dergosits, Naman Agarwal, Rob McGuinness");
 MODULE_DESCRIPTION("HoneyPi - A Distributed Honeypot for Raspberry Pis");
@@ -39,11 +40,15 @@ static struct cdev hp_cdev;
 static int hp_minor = 1;
 atomic_t max_refcnt;
 
-static DEFINE_RWLOCK(buffer_lock);
-
 static int hook_chain = NF_INET_PRE_ROUTING;
 static int hook_prio = NF_IP_PRI_FIRST;
 struct nf_hook_ops nf_hook_ops;
+
+static DEFINE_SPINLOCK(buffer_lock);
+static struct hp_pkt pkt_buffer[HP_BUFFER_SIZE];
+static unsigned int buf_count;
+static unsigned int buf_index;
+static DECLARE_WAIT_QUEUE_HEAD(wait_for_pkt);
 
 static inline struct tcphdr * ip_tcp_hdr(struct iphdr *iph)
 {
@@ -60,8 +65,12 @@ static inline struct udphdr * ip_udp_hdr(struct iphdr *iph)
 static ssize_t
 hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
+  unsigned int flags, index, to_copy;
+  size_t remaining;
+  ssize_t copied;
+
   if (!atomic_dec_and_test(&max_refcnt)){
-    printk(KERN_ERR "Attempted to read hp when it was already being read\n");
+    printk(KERN_ERR "Attempted to read honeypot when it was already being read\n");
     atomic_inc(&max_refcnt);
     return -EBUSY;
   }
@@ -75,13 +84,41 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
     atomic_inc(&max_refcnt);
     return -EFAULT;
   }
-  // Wait for packets
-  if(wait_event_interruptible(wait_for_skbs, !list_empty(&skbs))){
+  if(wait_event_interruptible(wait_for_pkt, buf_count > 0){
     atomic_inc(&max_refcnt);
     return -ERESTARTSYS;
   }
 
+  copied = 0;
+  spin_lock_irqsave(&buffer_lock, flags);
+  if(buf_count > 0){
+    remaining = count / sizeof(struct pkt_buffer); // # of pkt_buffers we can give
+    if(buf_count < remaining){
+      remaining = buf_count;
+    }
+
+    while(remaining > 0){
+      index = buf_index % HP_BUFFER_SIZE;
+      if(HP_BUFFER_SIZE - index < remaining){
+        to_copy = HP_BUFFER_SIZE - index;
+      }
+      else{
+        to_copy = remaining;
+      }
+      if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct pkt_buffer))){
+        spin_unlock_irqrestore(&buffer_lock, flags);
+        atomic_inc(&max_refcnt);
+        return -EFAULT;
+      }
+      buf_index += to_copy;
+      copied    += to_copy * sizeof(struct pkt_buffer);
+      buf_count -= to_copy;
+      remaining -= to_copy;
+    }
+  }
+  spin_unlock_irqrestore(&buffer_lock, flags);
   atomic_inc(&max_refcnt);
+  return copied;
 }
 
 static int hp_fs_open(struct inode *inode, struct file *file)
@@ -137,13 +174,43 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
     const struct net_device *indev, const struct net_device *outdev,
     int (*okfn) (struct sk_buff*))
 {
+  unsigned long flags;
+  struct tcphdr *tcph = NULL;
+  struct udphdr *udph = NULL;
+
+  if (skb->data_len != 0){
+    printk(KERN_ERR "sk_buff has paged data! dropping\n");
+    return NF_DROP;
+  }
+
   struct iphdr *iph = ip_hdr(skb);
   if (iph->protocol == IPPROTO_TCP) {
-    struct tcphdr *tcph = ip_tcp_hdr(iph);
+    *tcph = ip_tcp_hdr(iph);
   }
   if (iph->protocol == IPPROTO_UDP) {
-    struct udphdr *udph = ip_udp_hdr(iph);
+    *udph = ip_udp_hdr(iph);
   }
+
+  spin_lock_irqsave(&buffer_lock, flags);
+  if (buf_count != HP_BUFFER_SIZE){
+    unsigned int index = buf_index % HP_BUFFER_SIZE;
+    pkt_buffer[index].src_ip = iph->saddr;
+    pkt_buffer[index].dst_ip = iph->daddr;
+    if(tcph != NULL){
+      pkt_buffer[index].src_port = tcph->source;
+      pkt_buffer[index].dst_port = tcph->dest;
+    }
+    if(udph != NULL){
+      pkt_buffer[index].src_port = udph->source;
+      pkt_buffer[index].dst_port = udph->dest;
+    }
+    pkt_buffer[index].protocol = iph->protocol;
+    SHA256(skb->data, (size_t)skb->len, &(pkt_buffer[index].hash))
+    buf_count++;
+    buf_index++;
+    wake_up_interruptible(&wait_for_pkt);
+  }
+  spin_unlock_irqrestore(&buffer_lock, flags);
 
   return NF_ACCEPT;
 }
@@ -169,6 +236,8 @@ static int __init hp_init(void)
   }
 
   atomic_set(&max_refcnt, 1);
+  buf_count = 0;
+  buf_index = 0;
 
   /* register netfilter hook */
   memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));

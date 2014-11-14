@@ -24,6 +24,8 @@
 #define HP_ACTION_CAPTURE  0x1
 #define HP_ACTION_DPI      0x2
 
+#define HP_BUFFER_SIZE 4096
+
 struct hp_pkt {
 	uint32_t src_ip;
 	uint32_t dst_ip;

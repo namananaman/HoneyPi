@@ -32,7 +32,7 @@ struct hp_pkt {
 	uint16_t src_port;
 	uint16_t dst_port;
 	uint8_t protocol;
-	char[64] hash;
+	uint8_t[64] hash;
 };
 
 #endif /* __SNIFFER_IOCTL__ */

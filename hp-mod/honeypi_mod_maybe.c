@@ -39,7 +39,7 @@ static struct cdev hp_cdev;
 static int hp_minor = 1;
 atomic_t max_refcnt;
 
-static DEFINE_RWLOCK(flows_rwlock);
+static DEFINE_RWLOCK(buffer_lock);
 
 static int hook_chain = NF_INET_PRE_ROUTING;
 static int hook_prio = NF_IP_PRI_FIRST;

@@ -92,7 +92,7 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
   copied = 0;
   spin_lock_irqsave(&buffer_lock, flags);
   if(buf_count > 0){
-    remaining = count / sizeof(struct pkt_buffer); // # of pkt_buffers we can give
+    remaining = count / sizeof(struct hp_pkt); // # of pkt_buffers we can give
     if(buf_count < remaining){
       remaining = buf_count;
     }
@@ -105,13 +105,13 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
       else{
         to_copy = remaining;
       }
-      if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct pkt_buffer))){
+      if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct hp_pkt))){
         spin_unlock_irqrestore(&buffer_lock, flags);
         atomic_inc(&max_refcnt);
         return -EFAULT;
       }
       buf_index += to_copy;
-      copied    += to_copy * sizeof(struct pkt_buffer);
+      copied    += to_copy * sizeof(struct hp_pkt);
       buf_count -= to_copy;
       remaining -= to_copy;
     }

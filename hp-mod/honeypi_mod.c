@@ -25,34 +25,34 @@
 #include <linux/spinlock.h>
 #include <linux/textsearch.h>
 #include <linux/wait.h>
-#include <linux/proc_fs.h>
 #include <linux/sched.h>
 #include <asm/uaccess.h>
 
 #include <hp_ioctl.h>
+#include "sha256.h"
 
-DECLARE_WAIT_QUEUE_HEAD(wq);
 MODULE_AUTHOR("Maxwell Dergosits, Naman Agarwal, Rob McGuinness");
 MODULE_DESCRIPTION("HoneyPi - A Distributed Honeypot for Raspberry Pis");
 MODULE_LICENSE("Dual BSD/GPL");
 
-#define RING_BUFFER_SIZE (256)
-struct sk_buff* ring_buffer[RING_BUFFER_SIZE];
-volatile uint64_t head = 0;
-volatile uint64_t tail = 0;
+static dev_t hp_dev;
+static struct cdev hp_cdev;
+static int hp_minor = 1;
+atomic_t max_refcnt;
 
-#define inc_rb(x) (x++)
-#define empty_rb() (head == tail)
-#define index_rb(x) (x%RING_BUFFER_SIZE)
-
-static dev_t sniffer_dev;
-static struct cdev sniffer_cdev;
-static int sniffer_minor = 1;
 atomic_t refcnt;
 
 static int hook_chain = NF_INET_PRE_ROUTING;
 static int hook_prio = NF_IP_PRI_FIRST;
 struct nf_hook_ops nf_hook_ops;
+
+static spinlock_t buffer_lock;
+static DECLARE_WAIT_QUEUE_HEAD(wait_for_pkt);
+
+static struct hp_pkt pkt_buffer[HP_BUFFER_SIZE];
+static unsigned long buf_head;
+static unsigned long buf_tail;
+
 
 static inline struct tcphdr * ip_tcp_hdr(struct iphdr *iph)
 {
@@ -60,73 +60,73 @@ static inline struct tcphdr * ip_tcp_hdr(struct iphdr *iph)
   return tcph;
 }
 
-char * packet_data =NULL;
-size_t packet_size;
-int packet_offset;
-char packet_availble;
-
-char buffer_is_empty(void) {
-  char empty;
-  unsigned long flags;
-  local_irq_save(flags);
-  empty = empty_rb();
-  if(empty) packet_availble = 0;
-  local_irq_restore(flags);
-  return empty;
-}
-
-/* From kernel to userspace */
-/* this will only work if there if buf is large enough to hold all the packe information*/
-  static ssize_t
-sniffer_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+static inline struct udphdr * ip_udp_hdr(struct iphdr *iph)
 {
-  struct sk_buff *skb;
-  int left;
-  int len; unsigned long flags;
-
-  if(atomic_read(&refcnt) > 0) { return -EBUSY; }
-  atomic_add(1,&refcnt);
-
-  while(buffer_is_empty() && !packet_data) {
-    wait_event_interruptible(wq,packet_availble!=0);
-    len = 0;
-  }
-  if (!packet_data) {
-    //spin_lock(&buffer_lock); {
-    packet_offset = 0;
-    local_irq_save(flags);
-    skb  = ring_buffer[index_rb(tail)];
-    ring_buffer[index_rb(tail)] = NULL;
-    inc_rb(tail);
-    packet_size = skb->len;
-    packet_data =kmalloc(packet_size,GFP_ATOMIC);
-
-    if(skb_copy_bits(skb,0,packet_data,packet_size)) {
-    }
-    local_irq_restore(flags);
-    kfree_skb(skb);
-  }
-
-  if (packet_size == packet_offset) {
-    kfree(packet_data);
-    packet_data = NULL;
-    len = 0;
-  }
-  //write rest of buffer to userspace
-  else if(packet_size - packet_offset > count) {
-    left = copy_to_user(buf, packet_data+packet_offset, count);
-    len = count-left;
-    packet_offset += len;
-  } else {
-    left = copy_to_user(buf, packet_data+packet_offset, packet_size-packet_offset);
-    len = ((packet_size-packet_offset)-left);
-    packet_offset += len;
-  }
-  atomic_sub(1,&refcnt);
-  return len;
+  struct udphdr *udph = (void *) iph + iph->ihl*4;
+  return udph;
 }
 
-static int sniffer_fs_open(struct inode *inode, struct file *file)
+static ssize_t
+hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+{
+  unsigned int index, to_copy;
+  unsigned long flags;
+  size_t remaining;
+  ssize_t copied;
+
+  if (!atomic_dec_and_test(&max_refcnt)){
+    printk(KERN_ERR "Attempted to read honeypot when it was already being read\n");
+    atomic_inc(&max_refcnt);
+    return -EBUSY;
+  }
+  if (count < sizeof(struct hp_pkt)){
+    printk(KERN_ERR "Buffer passed to hp_fs_read is too small\n");
+    atomic_inc(&max_refcnt);
+    return -EFAULT;  // Not sure what error to return here.
+  }
+  if (!access_ok(VERIFY_WRITE, buf, count)){
+    printk(KERN_ERR "Buffer passed to hp_fs_read would segfault\n");
+    atomic_inc(&max_refcnt);
+    return -EFAULT;
+  }
+  if(wait_event_interruptible(wait_for_pkt, (buf_head-buf_tail) > 0)){
+    atomic_inc(&max_refcnt);
+    return -ERESTARTSYS;
+  }
+
+  copied = 0;
+  spin_lock_irqsave(&buffer_lock, flags);
+  if(buf_head - buf_tail > 0){
+    remaining = count / sizeof(struct hp_pkt); // # of pkt_buffers we can give
+    if(buf_head - buf_tail < remaining){
+      remaining = buf_head - buf_tail;
+    }
+
+    index = buf_tail % HP_BUFFER_SIZE;
+
+    while(remaining > 0){
+      if(remaining > (HP_BUFFER_SIZE - index)){
+        to_copy = HP_BUFFER_SIZE - index;
+      }
+      else{
+        to_copy = remaining;
+      }
+      if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct hp_pkt))){
+        spin_unlock_irqrestore(&buffer_lock, flags);
+        atomic_inc(&max_refcnt);
+        return -EFAULT;
+      }
+      buf_tail += to_copy;
+      copied += to_copy * sizeof(struct hp_pkt);
+      remaining -= to_copy;
+    }
+  }
+  spin_unlock_irqrestore(&buffer_lock, flags);
+  atomic_inc(&max_refcnt);
+  return copied;
+}
+
+static int hp_fs_open(struct inode *inode, struct file *file)
 {
   struct cdev *cdev = inode->i_cdev;
   int cindex = iminor(inode);
@@ -144,17 +144,17 @@ static int sniffer_fs_open(struct inode *inode, struct file *file)
   return 0;
 }
 
-static int sniffer_fs_release(struct inode *inode, struct file *file)
+static int hp_fs_release(struct inode *inode, struct file *file)
 {
   return 0;
 }
 
-static long sniffer_fs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long hp_fs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
   long err =0 ;
-  if (_IOC_TYPE(cmd) != SNIFFER_IOC_MAGIC)
+  if (_IOC_TYPE(cmd) != HP_IOC_MAGIC)
     return -ENOTTY;
-  if (_IOC_NR(cmd) > SNIFFER_IOC_MAXNR)
+  if (_IOC_NR(cmd) > HP_IOC_MAXNR)
     return -ENOTTY;
   if (_IOC_DIR(cmd) & _IOC_READ)
     err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
@@ -166,117 +166,108 @@ static long sniffer_fs_ioctl(struct file *file, unsigned int cmd, unsigned long 
   return err;
 }
 
-static struct file_operations sniffer_fops = {
-  .open = sniffer_fs_open,
-  .release = sniffer_fs_release,
-  .read = sniffer_fs_read,
-  .unlocked_ioctl = sniffer_fs_ioctl,
+static struct file_operations hp_fops = {
+  .open = hp_fs_open,
+  .release = hp_fs_release,
+  .read = hp_fs_read,
+  .unlocked_ioctl = hp_fs_ioctl,
   .owner = THIS_MODULE,
 };
 
-atomic64_t n_bytes;
-atomic64_t n_packets;
 
-void buffer_data(struct sk_buff * skb) {
-  unsigned long flags;
-
-  atomic64_add(1,&n_packets);
-  atomic64_add(skb->len,&n_bytes);
-
-  local_irq_save(flags);
-
-  packet_availble=1;
-
-  if (ring_buffer[index_rb(head)] != NULL) {
-    kfree_skb(ring_buffer[index_rb(head)]);
-  }
-
-  ring_buffer[index_rb(head)] = skb;
-  inc_rb(head);
-
-  local_irq_restore(flags);
-
-  wake_up_interruptible(&wq);
-
-}
-
-
-static unsigned int sniffer_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
+static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
     const struct net_device *indev, const struct net_device *outdev,
     int (*okfn) (struct sk_buff*))
 {
-  struct iphdr *iph = ip_hdr(skb);
-  if (iph->protocol == IPPROTO_TCP) {
-    struct tcphdr *tcph = ip_tcp_hdr(iph);
 
-    if (ntohs(tcph->dest) == 22) {
-      return NF_ACCEPT;
-    }
+  unsigned long flags;
+  struct  honeypot_command_packet *cmd_hdr;
+  struct tcphdr *tcph = NULL;
+  struct udphdr *udph = NULL;
+  struct iphdr  *iph = NULL;
+  if (skb->data_len != 0){
+    printk(KERN_ERR "sk_buff has paged data! dropping\n");
+    return NF_DROP;
   }
 
-  buffer_data(skb);
-  return NF_STOLEN;
+  iph = ip_hdr(skb);
+  if (iph->protocol == IPPROTO_TCP) {
+    tcph = ip_tcp_hdr(iph);
+  }
+  if (iph->protocol == IPPROTO_UDP) {
+    udph = ip_udp_hdr(iph);
+  }
+
+  spin_lock_irqsave(&buffer_lock, flags);
+  if (buf_head-buf_tail != HP_BUFFER_SIZE){
+    unsigned int index = buf_head % HP_BUFFER_SIZE;
+    pkt_buffer[index].src_ip = iph->saddr;
+    pkt_buffer[index].dst_ip = iph->daddr;
+    if(tcph != NULL){
+      pkt_buffer[index].src_port = tcph->source;
+      pkt_buffer[index].dst_port = tcph->dest;
+    }
+    if(udph != NULL){
+      pkt_buffer[index].src_port = udph->source;
+      pkt_buffer[index].dst_port = udph->dest;
+    }
+    pkt_buffer[index].protocol = iph->protocol;
+    cmd_hdr = (struct honeypot_command_packet*)(skb->data + sizeof(struct iphdr) + sizeof(struct udphdr));
+    if ((skb->len >= sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct honeypot_command_packet))
+      && (cmd_hdr->secret_big_endian == SECRET_BIGENDIAN)) {
+        // we have a command packet unless the data is a hash put it in the source
+        pkt_buffer[index].cmd = cmd_hdr->cmd_big_endian;
+        if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_SPAMMER_BE ||
+            cmd_hdr->cmd_big_endian == HONEYPOT_DEL_SPAMMER_BE) {
+          pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
+        } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_EVIL_BE
+            || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_EVIL_BE) {
+          memcpy(&(pkt_buffer[index].hash),&(cmd_hdr->sha_hash),SHA_DIGEST_LENGTH);
+        } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_VULNERABLE_BE
+            || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_VULNERABLE_BE) {
+          pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
+        }
+    } else {
+      pkt_buffer[index].cmd = 0;
+      SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
+    }
+    buf_head++;
+    wake_up_interruptible(&wait_for_pkt);
+  } else {
+    printk(KERN_ERR "ring buffer full not analyzing  packet\n");
+  }
+  spin_unlock_irqrestore(&buffer_lock, flags);
+
+  return NF_ACCEPT;
 }
 
-
-char * procfs_name = "honeypi";
-
-static int sniffer_proc_show(struct seq_file *m, void *v) {
-
-  seq_printf(m,"Packets stolen by filter: %ld\n",atomic64_read(&n_packets));
-  seq_printf(m,"Bytes stolen by filter: %ld\n",atomic64_read(&n_bytes));
-  return 0;
-
-}
-
-static int sniffer_proc_open(struct inode *inode, struct  file *file) {
-  return single_open(file, sniffer_proc_show, NULL);
-}
-
-static const struct file_operations sniffer_proc_fops = {
-  .owner = THIS_MODULE,
-  .open = sniffer_proc_open,
-  .read = seq_read,
-  .llseek = seq_lseek,
-  .release = single_release,
-};
-
-
-
-int init_proc(void)
-{
-  proc_create(procfs_name, 0, NULL, &sniffer_proc_fops);
-  return 0; /* everything is ok */
-}
-
-static int __init sniffer_init(void)
+static int __init hp_init(void)
 {
   int status = 0;
   atomic_set(&refcnt,0);
-  atomic64_set(&n_packets,0);
-  atomic64_set(&n_bytes,0);
 
-  init_proc();
-  printk(KERN_DEBUG "sniffer_init\n");
+  printk(KERN_DEBUG "hp_init\n");
 
-  status = alloc_chrdev_region(&sniffer_dev, 0, sniffer_minor, "sniffer");
+  status = alloc_chrdev_region(&hp_dev, 0, hp_minor, "honeypot");
   if (status <0) {
     printk(KERN_ERR "alloc_chrdev_retion failed %d\n", status);
     goto out;
   }
 
-  cdev_init(&sniffer_cdev, &sniffer_fops);
-  status = cdev_add(&sniffer_cdev, sniffer_dev, sniffer_minor);
+  cdev_init(&hp_cdev, &hp_fops);
+  status = cdev_add(&hp_cdev, hp_dev, hp_minor);
   if (status < 0) {
     printk(KERN_ERR "cdev_add failed %d\n", status);
     goto out_cdev;
   }
+  spin_lock_init(&buffer_lock);
+  atomic_set(&max_refcnt, 1);
 
-  atomic_set(&refcnt, 0);
-
+  buf_head =0;
+  buf_tail =0;
   /* register netfilter hook */
   memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
-  nf_hook_ops.hook = sniffer_nf_hook;
+  nf_hook_ops.hook = hp_nf_hook;
   nf_hook_ops.pf = PF_INET;
   nf_hook_ops.hooknum = hook_chain;
   nf_hook_ops.priority = hook_prio;
@@ -289,24 +280,23 @@ static int __init sniffer_init(void)
   return 0;
 
 out_add:
-  cdev_del(&sniffer_cdev);
+  cdev_del(&hp_cdev);
 out_cdev:
-  unregister_chrdev_region(sniffer_dev, sniffer_minor);
+  unregister_chrdev_region(hp_dev, hp_minor);
 out:
   return status;
 }
 
-static void __exit sniffer_exit(void)
+static void __exit hp_exit(void)
 {
 
   if (nf_hook_ops.hook) {
     nf_unregister_hook(&nf_hook_ops);
     memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
   }
-  cdev_del(&sniffer_cdev);
-  remove_proc_entry(procfs_name,NULL);
-  unregister_chrdev_region(sniffer_dev, sniffer_minor);
+  cdev_del(&hp_cdev);
+  unregister_chrdev_region(hp_dev, hp_minor);
 }
 
-module_init(sniffer_init);
-module_exit(sniffer_exit);
+module_init(hp_init);
+module_exit(hp_exit);

@@ -5,8 +5,8 @@ CFLAGS=-I$(PWD)/../include -g
 
 default: ip-tree $(EXEC)
 
-$(EXEC): honeypi_read_maybe.c ip-tree.o
-	$(CC) $(CFLAGS) -o $(EXEC) honeypi_read_maybe.c ip-tree.o
+$(EXEC): honeypi_read.c ip-tree.o
+	$(CC) $(CFLAGS) -o $(EXEC) honeypi_read.c ip-tree.o
 
 ip-tree:
 	$(CC) $(CFLAGS) -o ip-tree.o -c ip-tree.c

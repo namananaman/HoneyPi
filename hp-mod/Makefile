@@ -1,4 +1,4 @@
-CS5413 := honeypi_mod_maybe
+CS5413 := honeypi_mod
 CS5413_MODNAME := honeypi
 DIST_FILE=sniffer.tar.gz
 

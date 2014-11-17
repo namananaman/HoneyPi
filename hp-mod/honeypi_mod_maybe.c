@@ -69,7 +69,7 @@ static inline struct udphdr * ip_udp_hdr(struct iphdr *iph)
 static ssize_t
 hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
-  unsigned int  index, to_copy;
+  unsigned int index, to_copy;
   unsigned long flags;
   size_t remaining;
   ssize_t copied;
@@ -96,24 +96,29 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 
   copied = 0;
   spin_lock_irqsave(&buffer_lock, flags);
-  if(buf_head-buf_tail > 0){
+  if(buf_head - buf_tail > 0){
     remaining = count / sizeof(struct hp_pkt); // # of pkt_buffers we can give
-    if((buf_head-buf_tail) < remaining){
-      remaining = (buf_head-buf_tail);
+    if(buf_head - buf_tail < remaining){
+      remaining = buf_head - buf_tail;
     }
 
     index = buf_tail % HP_BUFFER_SIZE;
-    to_copy = 1;
 
     while(remaining > 0){
+      if(remaining > (HP_BUFFER_SIZE - index)){
+        to_copy = HP_BUFFER_SIZE - index;
+      }
+      else{
+        to_copy = remaining;
+      }
       if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct hp_pkt))){
         spin_unlock_irqrestore(&buffer_lock, flags);
         atomic_inc(&max_refcnt);
         return -EFAULT;
       }
-      buf_tail ++;
-      copied    += sizeof(struct hp_pkt);
-      remaining --;
+      buf_tail += to_copy;
+      copied += to_copy * sizeof(struct hp_pkt);
+      remaining -= to_copy;
     }
   }
   spin_unlock_irqrestore(&buffer_lock, flags);

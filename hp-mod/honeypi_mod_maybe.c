@@ -28,7 +28,7 @@
 #include <linux/sched.h>
 #include <asm/uaccess.h>
 
-#include "hp_ioctl.h"
+#include <hp_ioctl.h>
 #include "sha256.h"
 
 MODULE_AUTHOR("Maxwell Dergosits, Naman Agarwal, Rob McGuinness");
@@ -40,15 +40,19 @@ static struct cdev hp_cdev;
 static int hp_minor = 1;
 atomic_t max_refcnt;
 
+atomic_t refcnt;
+
 static int hook_chain = NF_INET_PRE_ROUTING;
 static int hook_prio = NF_IP_PRI_FIRST;
 struct nf_hook_ops nf_hook_ops;
 
-static DEFINE_SPINLOCK(buffer_lock);
-static struct hp_pkt pkt_buffer[HP_BUFFER_SIZE];
-static unsigned int buf_count;
-static unsigned int buf_index;
+static spinlock_t buffer_lock;
 static DECLARE_WAIT_QUEUE_HEAD(wait_for_pkt);
+
+static struct hp_pkt pkt_buffer[HP_BUFFER_SIZE];
+static unsigned long buf_head;
+static unsigned long buf_tail;
+
 
 static inline struct tcphdr * ip_tcp_hdr(struct iphdr *iph)
 {
@@ -65,7 +69,8 @@ static inline struct udphdr * ip_udp_hdr(struct iphdr *iph)
 static ssize_t
 hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
-  unsigned int flags, index, to_copy;
+  unsigned int  index, to_copy;
+  unsigned long flags;
   size_t remaining;
   ssize_t copied;
 
@@ -84,36 +89,31 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
     atomic_inc(&max_refcnt);
     return -EFAULT;
   }
-  if(wait_event_interruptible(wait_for_pkt, buf_count > 0){
+  if(wait_event_interruptible(wait_for_pkt, (buf_head-buf_tail) > 0)){
     atomic_inc(&max_refcnt);
     return -ERESTARTSYS;
   }
 
   copied = 0;
   spin_lock_irqsave(&buffer_lock, flags);
-  if(buf_count > 0){
+  if(buf_head-buf_tail > 0){
     remaining = count / sizeof(struct hp_pkt); // # of pkt_buffers we can give
-    if(buf_count < remaining){
-      remaining = buf_count;
+    if((buf_head-buf_tail) < remaining){
+      remaining = (buf_head-buf_tail);
     }
 
+    index = buf_tail % HP_BUFFER_SIZE;
+    to_copy = 1;
+
     while(remaining > 0){
-      index = buf_index % HP_BUFFER_SIZE;
-      if(HP_BUFFER_SIZE - index < remaining){
-        to_copy = HP_BUFFER_SIZE - index;
-      }
-      else{
-        to_copy = remaining;
-      }
       if(__copy_to_user(buf+copied, &pkt_buffer[index], to_copy * sizeof(struct hp_pkt))){
         spin_unlock_irqrestore(&buffer_lock, flags);
         atomic_inc(&max_refcnt);
         return -EFAULT;
       }
-      buf_index += to_copy;
-      copied    += to_copy * sizeof(struct hp_pkt);
-      buf_count -= to_copy;
-      remaining -= to_copy;
+      buf_tail ++;
+      copied    += sizeof(struct hp_pkt);
+      remaining --;
     }
   }
   spin_unlock_irqrestore(&buffer_lock, flags);
@@ -174,26 +174,28 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
     const struct net_device *indev, const struct net_device *outdev,
     int (*okfn) (struct sk_buff*))
 {
+
   unsigned long flags;
+  struct  honeypot_command_packet *cmd_hdr;
   struct tcphdr *tcph = NULL;
   struct udphdr *udph = NULL;
-
+  struct iphdr  *iph = NULL;
   if (skb->data_len != 0){
     printk(KERN_ERR "sk_buff has paged data! dropping\n");
     return NF_DROP;
   }
 
-  struct iphdr *iph = ip_hdr(skb);
+  iph = ip_hdr(skb);
   if (iph->protocol == IPPROTO_TCP) {
-    *tcph = ip_tcp_hdr(iph);
+    tcph = ip_tcp_hdr(iph);
   }
   if (iph->protocol == IPPROTO_UDP) {
-    *udph = ip_udp_hdr(iph);
+    udph = ip_udp_hdr(iph);
   }
 
   spin_lock_irqsave(&buffer_lock, flags);
-  if (buf_count != HP_BUFFER_SIZE){
-    unsigned int index = buf_index % HP_BUFFER_SIZE;
+  if (buf_head-buf_tail != HP_BUFFER_SIZE){
+    unsigned int index = buf_head % HP_BUFFER_SIZE;
     pkt_buffer[index].src_ip = iph->saddr;
     pkt_buffer[index].dst_ip = iph->daddr;
     if(tcph != NULL){
@@ -205,10 +207,29 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
       pkt_buffer[index].dst_port = udph->dest;
     }
     pkt_buffer[index].protocol = iph->protocol;
-    SHA256(skb->data, (size_t)skb->len, &(pkt_buffer[index].hash))
-    buf_count++;
-    buf_index++;
+    cmd_hdr = (struct honeypot_command_packet*)(skb->data + sizeof(struct iphdr) + sizeof(struct udphdr));
+    if ((skb->len >= sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct honeypot_command_packet))
+      && (cmd_hdr->secret_big_endian == SECRET_BIGENDIAN)) {
+        // we have a command packet unless the data is a hash put it in the source
+        pkt_buffer[index].cmd = cmd_hdr->cmd_big_endian;
+        if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_SPAMMER_BE ||
+            cmd_hdr->cmd_big_endian == HONEYPOT_DEL_SPAMMER_BE) {
+          pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
+        } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_EVIL_BE
+            || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_EVIL_BE) {
+          memcpy(&(pkt_buffer[index].hash),&(cmd_hdr->sha_hash),SHA_DIGEST_LENGTH);
+        } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_VULNERABLE_BE
+            || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_VULNERABLE_BE) {
+          pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
+        }
+    } else {
+      pkt_buffer[index].cmd = 0;
+      SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
+    }
+    buf_head++;
     wake_up_interruptible(&wait_for_pkt);
+  } else {
+    printk(KERN_ERR "ring buffer full not analyzing  packet\n");
   }
   spin_unlock_irqrestore(&buffer_lock, flags);
 
@@ -234,11 +255,11 @@ static int __init hp_init(void)
     printk(KERN_ERR "cdev_add failed %d\n", status);
     goto out_cdev;
   }
-
+  spin_lock_init(&buffer_lock);
   atomic_set(&max_refcnt, 1);
-  buf_count = 0;
-  buf_index = 0;
 
+  buf_head =0;
+  buf_tail =0;
   /* register netfilter hook */
   memset(&nf_hook_ops, 0, sizeof(nf_hook_ops));
   nf_hook_ops.hook = hp_nf_hook;

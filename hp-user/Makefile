@@ -1,15 +1,15 @@
 PWD=$(shell pwd)
 CC=gcc
-EXEC=hp-user
-CFLAGS=-I$(PWD)/../include
+EXEC=honeypi_read
+CFLAGS=-I$(PWD)/../include -g
 
 default: ip-tree $(EXEC)
 
-$(EXEC): sniffer_read.c ip-tree.o
-	$(CC) $(CFLAGS) -o hp-user sniffer_read.c ip-tree.o
+$(EXEC): honeypi_read_maybe.c ip-tree.o
+	$(CC) $(CFLAGS) -o $(EXEC) honeypi_read_maybe.c ip-tree.o
 
 ip-tree:
-	$(CC) -o ip-tree.o -c ip-tree.c
+	$(CC) $(CFLAGS) -o ip-tree.o -c ip-tree.c
 
 clean:
-	rm $(EXEC)
+	rm $(EXEC) ip-tree.o

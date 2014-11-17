@@ -1,5 +1,5 @@
-#ifndef __SNIFFER_IOCTL_
-#define __SNIFFER_IOCTL__
+#ifndef __HP_IOCTL_
+#define __HP_IOCTL__
 
 
 #define SRC_IP (0x01)
@@ -13,24 +13,46 @@
 
 #define FLAG_IS_SET(x,y) (0 != (x & y))
 
-struct sniffer_flow_entry {
-  int32_t src_ip;
-  int32_t dst_ip;
-  int32_t src_port;
-  int32_t dst_port;
-  char flags;
+#define HP_IOC_MAGIC       'p'
+
+#define HP_FLOW_ENABLE     _IOW(HP_IOC_MAGIC, 0x1, struct sniffer_flow_entry)
+#define HP_GET_RING        _IOW(HP_IOC_MAGIC, 0x1, struct sk_buff **)
+
+#define HP_IOC_MAXNR   0x3
+
+#define HP_ACTION_NULL     0x0
+#define HP_ACTION_CAPTURE  0x1
+#define HP_ACTION_DPI      0x2
+
+#define HP_BUFFER_SIZE 4096
+
+#define HONEYPOT_ADD_SPAMMER_BE    0x101
+#define HONEYPOT_ADD_EVIL_BE       0x102
+#define HONEYPOT_ADD_VULNERABLE_BE 0x103
+#define HONEYPOT_DEL_SPAMMER_BE    0x201
+#define HONEYPOT_DEL_EVIL_BE       0x202
+#define HONEYPOT_DEL_VULNERABLE_BE 0x203
+
+#define SECRET_BIGENDIAN 0x1034
+#define SECRET_LITTLEENDIAN 0x3410
+#define SHA256_DIGEST_LEN 32
+#define HONEYPOT_PRINT    0x301
+
+struct honeypot_command_packet {
+  uint16_t secret_big_endian;
+  uint16_t cmd_big_endian;
+  uint32_t data_big_endian;
+  uint8_t sha_hash[SHA256_DIGEST_LEN];
 };
 
-#define SNIFFER_IOC_MAGIC       'p'
-
-#define SNIFFER_FLOW_ENABLE     _IOW(SNIFFER_IOC_MAGIC, 0x1, struct sniffer_flow_entry)
-#define SNIFFER_FLOW_DISABLE    _IOW(SNIFFER_IOC_MAGIC, 0x2, struct sniffer_flow_entry)
-
-#define SNIFFER_IOC_MAXNR   0x3
-
-
-#define SNIFFER_ACTION_NULL     0x0
-#define SNIFFER_ACTION_CAPTURE  0x1
-#define SNIFFER_ACTION_DPI      0x2
+struct hp_pkt {
+  uint32_t src_ip;
+  uint32_t dst_ip;
+  uint16_t src_port;
+  uint16_t dst_port;
+  uint8_t protocol;
+  uint8_t hash[SHA256_DIGEST_LEN];
+  uint16_t cmd;
+};
 
 #endif /* __SNIFFER_IOCTL__ */

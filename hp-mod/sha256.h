@@ -202,8 +202,8 @@ void SHA512_Transform(SHA512_CTX *c, const unsigned char *data);
 
 
 
-#include <sys/types.h>
-#include <string.h>
+#include <linux/types.h>
+#include <linux/string.h>
 
 int SHA224_Init (SHA256_CTX *c)
   {

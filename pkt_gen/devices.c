@@ -742,7 +742,14 @@ void network_init(double data_rate, char* dest_address, int verbose)
 
 }
 
-int main() {
-  return 0;
+int main(int argc, char* argv[]) {
+  if (argc == 4) {
+    network_init(strtod(argv[1], NULL), argv[2], atoi(argv[3]));
+    net_send_pkts();
+    return 0;
+  } else {
+    printf("usage: [data_rate] [dest_address] [verbose]\n");
+    return 1;
+  }
 }
 

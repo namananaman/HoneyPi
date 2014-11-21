@@ -49,6 +49,7 @@ int opt_verbose_net;
 int sd; //socket file descriptor
 int net_mean; //mean microseconds between send
 time_t last_print;
+time_t start_t;
 
 // let's aim for about N_LO<r<N_HI elements in each of the three lists
 // with M_LO=5%<r<30%=M_HI of packets matching each list
@@ -360,7 +361,6 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
         vec_del(&v_vuln, data);
         break;
     }
-    //TODO: change command packet so that it can take a sha hash
     if (evil != NULL) {
       unsigned char sha_hash[SHA256_DIGEST_LENGTH];
       sha256_hash(evil->data, evil->len, sha_hash);
@@ -470,7 +470,7 @@ struct elt *do_sort(volatile struct vec *v)
   return e;
 }
 
-void print_stats(unsigned int t_end)
+void print_stats(time_t end_t)
 {
   struct elt *es = do_sort(&v_spam);
   struct elt *ev = do_sort(&v_vuln);
@@ -496,8 +496,8 @@ void print_stats(unsigned int t_end)
   free(ee);
   unsigned int p = npkts;
   unsigned int b = nbytes;
-  //printf("[net: total packets: %d (%g pkts/sec)]\n", p, p * 1000000.0 / (t_start - t_end));
-  //printf("[net: total bytes: %d (%g Mbit/sec)]\n", b, b * 8.0 / (t_start - t_end));
+  printf("[net: total packets: %d (%g pkts/sec)]\n", p, p * 1000000.0 / difftime(start_t, end_t));
+  printf("[net: total bytes: %d (%g Mbit/sec)]\n", b, b * 8.0 / difftime(start_t, end_t));
 }
 
 void net_send_pkts() {
@@ -527,6 +527,7 @@ void net_send_pkts() {
     //TODO: need to define last_print somewhere 
     //print every ten seconds could also print every x packets
     if(difftime(now, last_print) > 10) {
+        print_stats(now);
         fill_cmd(HONEYPOT_PRINT);
         last_print = now; 
     } else if (p < p_spam) {
@@ -535,9 +536,10 @@ void net_send_pkts() {
       else
         fill_cmd(HONEYPOT_DEL_SPAMMER);
     }  else if (p < p_spam + p_evil) {
-      if (need_evil || (rr & 1))
+      if (need_evil || (rr & 1)) {
+        printf("sending add evil cmd");
         evil = fill_cmd(HONEYPOT_ADD_EVIL);
-      else
+      } else
         fill_cmd(HONEYPOT_DEL_EVIL);
     } else if (p < p_spam + p_evil + p_vuln) {
       if (need_vuln || (rr & 1))
@@ -727,6 +729,7 @@ void network_init(double data_rate, char* dest_address, int verbose)
   vec_init(&v_spam, 100, 30, 300);
   vec_init(&v_vuln, 100, 10, 100);
   inet_pton(AF_INET, dest_address, &dest_ip);
+  start_t = time(0);
   sd = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
   if(sd < 0) {
     printf("socket() error");

@@ -242,7 +242,7 @@ unsigned int vec_has(volatile struct vec *v, unsigned int key)
 
 //takes a pointer to a data buffer, and makes a packet full of random data
 
-void fill_rand(unsigned char *data, unsigned int src_addr, unsigned short dst_port) {
+void fill_rand(unsigned char *data, unsigned int* len_ptr, unsigned int src_addr, unsigned short dst_port) {
 
     int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
 
@@ -251,7 +251,7 @@ void fill_rand(unsigned char *data, unsigned int src_addr, unsigned short dst_po
     unsigned int len = NET_MINPKT + (unsigned int)(r * (_NET_MAXPKT-NET_MINPKT));
     if (len < NET_MINPKT) len = NET_MINPKT;
     else if (len > _NET_MAXPKT) len = _NET_MAXPKT;
-    pkt_len = len;
+    *len_ptr  = len;
 
     struct iphdr *p = (void *)data;
     p->version = 0x4;
@@ -266,7 +266,7 @@ void fill_rand(unsigned char *data, unsigned int src_addr, unsigned short dst_po
     p->saddr = htonl(src_addr);
     p->daddr = dest_ip.s_addr;
 
-    struct udphdr *u = (struct udphdr *) (((void*) pkt) + sizeof(struct iphdr));
+    struct udphdr *u = (struct udphdr *) (((void*) data) + sizeof(struct iphdr));
     u->source = htons((unsigned short)rand());
     u->dest = htons(dst_port);
     u->len = htons(len - sizeof(struct iphdr));
@@ -277,7 +277,7 @@ void fill_rand(unsigned char *data, unsigned int src_addr, unsigned short dst_po
     dest_addr.sin_addr = dest_ip;
 
     for (int i = data_start; i < len; i++)
-      pkt[i] = (unsigned char)rand();
+      data[i] = (unsigned char)rand();
 
     if (len >= 28 + 4) {
       if (*(unsigned short *)(data+28) == ntohs(HONEYPOT_SECRET)
@@ -340,7 +340,7 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
       case HONEYPOT_ADD_EVIL: 
         evil = malloc(4096);
         do {
-          fill_rand(evil->data, rand(), (unsigned short)(0xffff & rand()));
+          fill_rand(evil->data, &pkt_len, rand(), (unsigned short)(0xffff & rand()));
           data = djb2(evil->data, pkt_len);
         } while (vec_has(&v_evil, data));
       case HONEYPOT_ADD_VULNERABLE: 
@@ -551,13 +551,13 @@ void net_send_pkts() {
       p = rand() % 1024;
       if (p < v_spam.probk) {
         //send a spam packet
-        fill_rand(pkt, pick_rand(&v_spam), (unsigned short)(0xffff & rand()));
+        fill_rand(pkt, &pkt_len, pick_rand(&v_spam), (unsigned short)(0xffff & rand()));
       } else if (p < v_spam.probk + v_evil.probk) {
         //send a evil packet
         struct evilpkt *evil = pick_randp(&v_evil);
         if (!evil) {
           //if there are no evil packets right now
-          fill_rand(pkt, rand(), (unsigned short)(0xffff & rand()));
+          fill_rand(pkt, &pkt_len, rand(), (unsigned short)(0xffff & rand()));
         } else {
           //send the evil packet
           pkt_len = evil->len;
@@ -565,10 +565,10 @@ void net_send_pkts() {
         }
       } else if (p < v_spam.probk + v_evil.probk + v_vuln.probk) {
         //send to a vulnerable port
-        fill_rand(pkt, rand(), (unsigned short)pick_rand(&v_vuln));
+        fill_rand(pkt, &pkt_len, rand(), (unsigned short)pick_rand(&v_vuln));
       } else {
         //send a normal packet
-        fill_rand(pkt, rand(), (unsigned short)(0xffff & rand()));
+        fill_rand(pkt, &pkt_len, rand(), (unsigned short)(0xffff & rand()));
       }
     }
     process(evil);

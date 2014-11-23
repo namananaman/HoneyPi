@@ -20,6 +20,7 @@ long ipt_add(ipt* t, uint8_t * key, int len, int amount, char ins)
     }
     current = current[key[i]];
   }
+  return -1;
 }
 
 ipt * create()
@@ -32,7 +33,7 @@ ipt * create()
 
 
 void
-ipt_iter(ipt * t, int levels, int k_len, char * k, void(f)(void*,uint8_t*,int))
+ipt_iter(ipt * t, int levels, int k_len, uint8_t * k, void(f)(void*,uint8_t*,int))
 {
   int i;
   for (i = 0; i < 256; i++) {

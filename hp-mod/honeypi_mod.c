@@ -201,17 +201,10 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
   spin_lock_irqsave(&buffer_lock, flags);
   if (buf_head-buf_tail != HP_BUFFER_SIZE){
     unsigned int index = buf_head % HP_BUFFER_SIZE;
-    pkt_buffer[index].src_ip = iph->saddr;
-    pkt_buffer[index].dst_ip = iph->daddr;
-    if(tcph != NULL){
-      pkt_buffer[index].src_port = tcph->source;
-      pkt_buffer[index].dst_port = tcph->dest;
-    }
-    if(udph != NULL){
-      pkt_buffer[index].src_port = udph->source;
-      pkt_buffer[index].dst_port = udph->dest;
-    }
-    pkt_buffer[index].protocol = iph->protocol;
+
+    #ifdef DEBUG
+      memset(&pkt_buffer[index],0x55,sizeof(struct hp_pkt));
+    #endif
     cmd_hdr = (struct honeypot_command_packet*)(skb->data + sizeof(struct iphdr) + sizeof(struct udphdr));
     if ((skb->len >= sizeof(struct iphdr) + sizeof(struct udphdr) + sizeof(struct honeypot_command_packet))
       && (cmd_hdr->secret_big_endian == SECRET_BIGENDIAN)) {
@@ -228,6 +221,17 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
           pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
         }
     } else {
+      pkt_buffer[index].src_ip = iph->saddr;
+      pkt_buffer[index].dst_ip = iph->daddr;
+      if(tcph != NULL){
+        pkt_buffer[index].src_port = tcph->source;
+        pkt_buffer[index].dst_port = tcph->dest;
+      }
+      if(udph != NULL){
+        pkt_buffer[index].src_port = udph->source;
+        pkt_buffer[index].dst_port = udph->dest;
+      }
+      pkt_buffer[index].protocol = iph->protocol;
       pkt_buffer[index].cmd = 0;
       SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
     }

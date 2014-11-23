@@ -14,54 +14,91 @@
 
 #include <hp_ioctl.h>
 #include "ip-tree.h"
+#include "hashtable.h"
 
+void int_handler(int sig);
 static char * dev_file = "/dev/honeypi";
 
-ipt * src_ip;
-ipt * dst_ip;
-ipt * dst_p;
-ipt * src_p;
-ipt * protocol;
+hashtable_t spammers;
+hashtable_t vulnerable;
+hashtable_t evil;
+ipt* protocol;
 
 
 void init_ipts(void)
 {
-  src_ip = create();
-  dst_ip = create();
-  src_p = create();
-  dst_p = create();
+  spammers = hashtable_create();
+  hashtable_initialize(spammers,200,default_hash, 4);
+  vulnerable=hashtable_create();
+  hashtable_initialize(vulnerable,200,default_hash, 2);
+  evil= hashtable_create();
+  hashtable_initialize(evil,200,default_hash, 32);
   protocol = create();
 }
 
-int32_to_charptr(uint32_t val, char arr[4])
+void
+int32_to_uint8_tptr(uint32_t val, uint8_t arr[4])
 {
   arr[3] = (val >> 24)&0xff;
   arr[2] = (val >> 16)&0xff;
   arr[1] = (val >> 8)&0xff;
   arr[0] = (val >> 0)&0xff;
 }
-
-int16_to_charptr(uint16_t val, char arr[2])
+void
+int16_to_uint8_tptr(uint16_t val, uint8_t arr[2])
 {
   arr[1] = (val >> 8)&0xff;
   arr[0] = (val >> 0)&0xff;
 }
+
+
+void handle_commnad(struct hp_pkt * cmd) {
+
+  uint8_t _src_ip[4];
+  uint8_t _dst_port[2];
+  uint16_t dst_port = (uint16_t)(cmd->src_ip>>16);
+  int32_to_uint8_tptr(cmd->src_ip,_src_ip);
+  int32_to_uint8_tptr(dst_port,_dst_port);
+
+  switch(cmd->cmd) {
+    case HONEYPOT_ADD_SPAMMER_BE:
+      hashtable_add(spammers,_src_ip,0);
+      break;
+    case HONEYPOT_ADD_EVIL_BE:
+      hashtable_add(evil,cmd->hash, 0);
+      break;
+    case HONEYPOT_ADD_VULNERABLE_BE:
+      hashtable_add(vulnerable,_dst_port,0);
+      break;
+    case HONEYPOT_DEL_SPAMMER_BE:
+      hashtable_delete(spammers,_src_ip);
+      break;
+    case HONEYPOT_DEL_EVIL_BE:
+      hashtable_delete(evil,cmd->hash);
+      break;
+    case HONEYPOT_DEL_VULNERABLE_BE:
+      hashtable_delete(vulnerable,_dst_port);
+      break;
+    case HONEYPOT_PRINT_BE:
+      int_handler(0);
+      return;
+  }
+}
 void handle_pkt(struct hp_pkt * pkt)
 {
   //printf("%x %x %x %x\n",pkt->src_ip,pkt->dst_ip, pkt->src_port, pkt->dst_port);
-  char _src_ip[4];
-  char _dst_ip[4];
-  char _src_p[2];
-  char _dst_p[2];
-  int32_to_charptr(pkt->src_ip,_src_ip);
-  int32_to_charptr(pkt->dst_ip,_dst_ip);
-  int16_to_charptr(pkt->src_port,_src_p);
-  int16_to_charptr(pkt->dst_port,_dst_p);
-  ipt_add(src_ip,_src_ip,4,1,1);
-  ipt_add(dst_ip,_dst_ip,4,1,1);
-  ipt_add(src_p,_src_p,2,1,1);
-  ipt_add(dst_p,_dst_p,2,1,1);
-  ipt_add(protocol,(char*)&(pkt->protocol),1,1,1);
+  if (pkt->cmd != 0) {
+    handle_commnad(pkt);
+    return;
+  }
+  uint8_t _src_ip[4];
+  uint8_t _dst_p[2];
+  int32_to_uint8_tptr(pkt->src_ip,_src_ip);
+  int16_to_uint8_tptr(pkt->dst_port,_dst_p);
+  hashtable_increment(spammers,_src_ip);
+  hashtable_increment(vulnerable,_dst_p);
+  hashtable_increment(evil,pkt->hash);
+  ipt_add(protocol, (uint8_t*)&(pkt->protocol),1,1,1);
 }
 
 
@@ -82,43 +119,41 @@ void print_proto(void * val, uint8_t * key, int k_len)
   printf("%u:",key[0]);
   printf("%ld\n",(long)val);
 }
+void print_evil(void *val, uint8_t * key, int k_len) {
+  int i;
+  for (i = 0; i < k_len; i++) {
+    printf("%02x",key[i]);
+  }
+  printf(":%ld\n",(long)val);
+
+}
+
 
 
 void int_handler(int sig)
 {
-  uint8_t key[4];
-  printf("Source IPs:\n");
-  ipt_iter(src_ip,4,4,key,print_ip);
-  printf("Destination IPs:\n");
-  ipt_iter(dst_ip,4,4,key,print_ip);
-  printf("Source Ports:\n");
-  ipt_iter(src_p,2,2,key,print_port);
-  printf("Destination Ports:\n");
-  ipt_iter(dst_p,2,2,key,print_port);
+  printf("Spammers:\n");
+  hashtable_iter(spammers,print_ip);
+  printf("Vulnerable Ports:\n");
+  hashtable_iter(vulnerable,print_port);
   printf("Protocols:\n");
-  ipt_iter(protocol, 1,1,key,print_proto);
-  exit(0);
+  uint8_t k;
+  ipt_iter(protocol, 1,1, &k,print_proto);
 }
 
 int main(int argc, char **argv)
 {
-  signal(SIGINT,int_handler);
   init_ipts();
   int dev_fd = open(dev_file, O_RDONLY);
   while(1)
   {
-    struct hp_pkt pkt[64];
-    int bytes_read = read(dev_fd,(char*)pkt, sizeof(struct hp_pkt) * 64);
+    struct hp_pkt pkt;
+    int bytes_read = read(dev_fd,(char*)&pkt, sizeof(struct hp_pkt));
     if (bytes_read < sizeof(struct hp_pkt))
     {
       printf("didn't read a packet\n");
       exit(0);
     }
-    int n_packets = bytes_read / sizeof(struct hp_pkt);
-    int i;
-    for (i = 0; i < n_packets; i++)
-    {
-      handle_pkt(&(pkt[i]));
-    }
+    handle_pkt(&(pkt));
   }
 }

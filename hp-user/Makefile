@@ -4,18 +4,19 @@ EXEC=honeypi_read
 CFLAGS=-I$(PWD)/../include -g -Wall
 LDFLAGS=
 
-default: ip-tree $(EXEC)
+_SOURCES=honeypi_read.c hashtable.c ip-tree.c net.c
 
-$(EXEC): honeypi_read.c ip-tree.o hashtable.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(EXEC) honeypi_read.c ip-tree.o hashtable.o
+SOURCES=$(addprefix src/,$(_SOURCES))
 
-ip-tree:
-	$(CC) $(CFLAGS) -o ip-tree.o -c ip-tree.c
+OBJECTS=$(addprefix obj/,$(notdir $(SOURCES:.c=.o)))
 
-hashtable:
-	$(CC) $(CFLAGS) -o hashtable.o -c hashtable.c
+default: $(EXEC)
 
-hashtest: hashtable.o hashtest.c
-	$(CC) $(CFLAGS) -o hashtest hashtest.c hashtable.o
+$(EXEC): $(OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $(EXEC) $(OBJECTS)
+
+obj/%.o: src/%.c
+	$(CC) $(FLAGS) $(CFLAGS) -c $< -o $@
+
 clean:
-	rm $(EXEC) ip-tree.o hashtable.o
+	rm $(EXEC) $(OBJECTS)

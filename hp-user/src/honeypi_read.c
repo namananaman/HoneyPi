@@ -15,6 +15,7 @@
 #include <hp_ioctl.h>
 #include "ip-tree.h"
 #include "hashtable.h"
+#include "net.h"
 
 void int_handler(int sig);
 static char * dev_file = "/dev/honeypi";
@@ -23,7 +24,6 @@ hashtable_t spammers;
 hashtable_t vulnerable;
 hashtable_t evil;
 ipt* protocol;
-
 
 void init_ipts(void)
 {
@@ -144,7 +144,14 @@ void int_handler(int sig)
 int main(int argc, char **argv)
 {
   init_ipts();
+
   int dev_fd = open(dev_file, O_RDONLY);
+
+  if (net_init() > 0) {
+    printf("couldn't bind to a socket\n");
+    exit(-1);
+  }
+
   while(1)
   {
     struct hp_pkt pkt;

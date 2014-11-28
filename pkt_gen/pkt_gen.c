@@ -64,7 +64,7 @@ time_t start_t;
 
 struct evilpkt {
   unsigned int len;
-  unsigned char data[0];
+  unsigned char data[_NET_MAXPKT];
 };
 
 struct elt {
@@ -99,6 +99,7 @@ unsigned long djb2(unsigned char *str, int n)
 void sha256_hash(unsigned char* str, int len, unsigned char* obuf) {
     //unsigned char digest[SHA256_DIGEST_LENGTH];
     //SHA256(str, strlen(str), digest);
+    printf("about to hash\n");
     SHA256(str, len, obuf);
 }
 //initializes a vector used to track the statistics

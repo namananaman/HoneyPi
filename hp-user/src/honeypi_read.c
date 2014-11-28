@@ -33,6 +33,7 @@ void init_ipts(void)
   protocol = create();
 }
 
+
 void
 int32_to_uint8_tptr(uint32_t val, uint8_t arr[4])
 {
@@ -41,6 +42,8 @@ int32_to_uint8_tptr(uint32_t val, uint8_t arr[4])
   arr[1] = (val >> 8)&0xff;
   arr[0] = (val >> 0)&0xff;
 }
+
+
 void
 int16_to_uint8_tptr(uint16_t val, uint8_t arr[2])
 {
@@ -49,7 +52,7 @@ int16_to_uint8_tptr(uint16_t val, uint8_t arr[2])
 }
 
 
-void handle_commnad(struct hp_pkt * cmd) {
+void handle_command(struct hp_pkt * cmd) {
 
   uint8_t _src_ip[4];
   uint8_t _dst_port[2];
@@ -81,11 +84,13 @@ void handle_commnad(struct hp_pkt * cmd) {
       return;
   }
 }
+
+
 void handle_pkt(struct hp_pkt * pkt)
 {
   //printf("%x %x %x %x\n",pkt->src_ip,pkt->dst_ip, pkt->src_port, pkt->dst_port);
   if (pkt->cmd != 0) {
-    handle_commnad(pkt);
+    handle_command(pkt);
     return;
   }
   uint8_t _src_ip[4];
@@ -122,20 +127,22 @@ void print_evil(void *val, uint8_t * key, int k_len) {
     printf("%02x",key[i]);
   }
   printf(":%ld\n",(long)val);
-
 }
-
 
 
 void int_handler(int sig)
 {
+  printf("Begin honeypot output:\n")
   printf("Spammers:\n");
   hashtable_iter(&spammers,print_ip);
   printf("Vulnerable Ports:\n");
   hashtable_iter(&vulnerable,print_port);
+  printf("Evil Packets:\n")
+  hashtable_iter(&evil,print_evil);
   printf("Protocols:\n");
   uint8_t k;
   ipt_iter(protocol, 1,1, &k,print_proto);
+  printf("End of output.\n");
 }
 
 int main(int argc, char **argv)

@@ -1,6 +1,6 @@
 #include "hashtable.h"
 
-void iter(uint8_t * key, void * value, int32_t key_len) {
+void iter(void * value, uint8_t * key, int32_t key_len) {
   int i;
   for (i= 0; i < key_len; i++) {
     printf("%02x",key[i]);
@@ -9,20 +9,29 @@ void iter(uint8_t * key, void * value, int32_t key_len) {
 }
 
 int main(void) {
+  struct hashmap aa;
+  struct hashmap *a= &aa;
 
-  hashtable_t a = hashtable_create();
 
 
   hashtable_initialize(a, 200, default_hash, 4);
 
   uint8_t key[4] = {1,2,3,4};
-  hashtable_add(a,key,(void*)5);
+  int i;
+  for (i= 0; i < 10; i++) {
+    key[0] = i;
+    hashtable_add(a,key,(void*)5);
 
+  }
 
-  printf("val = %ld\n", (long)hashtable_get(a, key));
   hashtable_iter(a,iter);
+  printf("deleting\n");
 
-  hashtable_delete(a,key);
+  for (i= 0; i < 5; i++) {
+    key[0] = i;
+    hashtable_delete(a,key);
+  }
 
+  hashtable_iter(a,iter);
   return 0;
 }

@@ -20,19 +20,16 @@
 void int_handler(int sig);
 static char * dev_file = "/dev/honeypi";
 
-hashtable_t spammers;
-hashtable_t vulnerable;
-hashtable_t evil;
+struct hashmap spammers;
+struct hashmap vulnerable;
+struct hashmap  evil;
 ipt* protocol;
 
 void init_ipts(void)
 {
-  spammers = hashtable_create();
-  hashtable_initialize(spammers,200,default_hash, 4);
-  vulnerable=hashtable_create();
-  hashtable_initialize(vulnerable,200,default_hash, 2);
-  evil= hashtable_create();
-  hashtable_initialize(evil,200,default_hash, 32);
+  hashtable_initialize(&spammers,200,default_hash, 4);
+  hashtable_initialize(&vulnerable,200,default_hash, 2);
+  hashtable_initialize(&evil,200,default_hash, 32);
   protocol = create();
 }
 
@@ -62,22 +59,22 @@ void handle_commnad(struct hp_pkt * cmd) {
 
   switch(cmd->cmd) {
     case HONEYPOT_ADD_SPAMMER_BE:
-      hashtable_add(spammers,_src_ip,0);
+      hashtable_add(&spammers,_src_ip,0);
       break;
     case HONEYPOT_ADD_EVIL_BE:
-      hashtable_add(evil,cmd->hash, 0);
+      hashtable_add(&evil,cmd->hash, 0);
       break;
     case HONEYPOT_ADD_VULNERABLE_BE:
-      hashtable_add(vulnerable,_dst_port,0);
+      hashtable_add(&vulnerable,_dst_port,0);
       break;
     case HONEYPOT_DEL_SPAMMER_BE:
-      hashtable_delete(spammers,_src_ip);
+      hashtable_delete(&spammers,_src_ip);
       break;
     case HONEYPOT_DEL_EVIL_BE:
-      hashtable_delete(evil,cmd->hash);
+      hashtable_delete(&evil,cmd->hash);
       break;
     case HONEYPOT_DEL_VULNERABLE_BE:
-      hashtable_delete(vulnerable,_dst_port);
+      hashtable_delete(&vulnerable,_dst_port);
       break;
     case HONEYPOT_PRINT_BE:
       int_handler(0);
@@ -95,9 +92,9 @@ void handle_pkt(struct hp_pkt * pkt)
   uint8_t _dst_p[2];
   int32_to_uint8_tptr(pkt->src_ip,_src_ip);
   int16_to_uint8_tptr(pkt->dst_port,_dst_p);
-  hashtable_increment(spammers,_src_ip);
-  hashtable_increment(vulnerable,_dst_p);
-  hashtable_increment(evil,pkt->hash);
+  hashtable_increment(&spammers,_src_ip,1);
+  hashtable_increment(&vulnerable,_dst_p,1);
+  hashtable_increment(&evil,pkt->hash,1);
   ipt_add(protocol, (uint8_t*)&(pkt->protocol),1,1,1);
 }
 
@@ -133,9 +130,9 @@ void print_evil(void *val, uint8_t * key, int k_len) {
 void int_handler(int sig)
 {
   printf("Spammers:\n");
-  hashtable_iter(spammers,print_ip);
+  hashtable_iter(&spammers,print_ip);
   printf("Vulnerable Ports:\n");
-  hashtable_iter(vulnerable,print_port);
+  hashtable_iter(&vulnerable,print_port);
   printf("Protocols:\n");
   uint8_t k;
   ipt_iter(protocol, 1,1, &k,print_proto);

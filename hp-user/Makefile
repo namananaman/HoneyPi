@@ -4,7 +4,10 @@ EXEC=honeypi_read
 CFLAGS=-I$(PWD)/../include -g -Wall
 LDFLAGS=
 
-_SOURCES=honeypi_read.c hashtable.c ip-tree.c net.c
+MAIN=honeypi_read.c
+
+_SOURCES=hashtable.c ip-tree.c net.c queue.c
+_SOURCES+=$(MAIN)
 
 SOURCES=$(addprefix src/,$(_SOURCES))
 
@@ -17,6 +20,7 @@ $(EXEC): $(OBJECTS)
 
 obj/%.o: src/%.c
 	$(CC) $(FLAGS) $(CFLAGS) -c $< -o $@
+
 
 clean:
 	rm $(EXEC) $(OBJECTS)

@@ -162,6 +162,8 @@ void hashtable_delete(struct hashmap * self, uint8_t * key) {
   struct hp * pair = find_key(&(self->buckets[index]), key, self->key_len);
   if(!queue_delete(&(self->buckets[index]), (void**)&pair)) {
     self->entries--;
+    free(pair->key);
+    free(pair);
   }
 }
 

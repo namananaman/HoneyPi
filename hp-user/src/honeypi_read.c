@@ -132,12 +132,12 @@ void print_evil(void *val, uint8_t * key, int k_len) {
 
 void int_handler(int sig)
 {
-  printf("Begin honeypot output:\n")
+  printf("Begin honeypot output:\n");
   printf("Spammers:\n");
   hashtable_iter(&spammers,print_ip);
   printf("Vulnerable Ports:\n");
   hashtable_iter(&vulnerable,print_port);
-  printf("Evil Packets:\n")
+  printf("Evil Packets:\n");
   hashtable_iter(&evil,print_evil);
   printf("Protocols:\n");
   uint8_t k;

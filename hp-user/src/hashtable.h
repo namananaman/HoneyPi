@@ -36,13 +36,7 @@ void hashtable_delete(struct hashmap *self, uint8_t * key);
 /* gets a value from the hashtable given a key, -1 if not found */
 void * hashtable_get(struct hashmap *self, uint8_t * key);
 
-/* prints out the statistics of the hashtable */
-void hashtable_stats(struct hashmap *self);
-
 /* prints out the contents of the hashtable */
 void hashtable_iter(struct hashmap *self, void(*iter_func)(void *, uint8_t *, int32_t));
-
-/* returns the ith entry int the hash table depending on hash */
-struct hash_pair *hashtable_gethashpair(struct hashmap *self, uint8_t * i);
 
 #endif

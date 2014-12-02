@@ -99,7 +99,6 @@ unsigned long djb2(unsigned char *str, int n)
 void sha256_hash(unsigned char* str, int len, unsigned char* obuf) {
     //unsigned char digest[SHA256_DIGEST_LENGTH];
     //SHA256(str, strlen(str), digest);
-    printf("about to hash\n");
     SHA256(str, len, obuf);
 }
 //initializes a vector used to track the statistics
@@ -112,14 +111,14 @@ void vec_init(volatile struct vec *v, int n, int target, int probk)
   v->probk = probk;
 }
 //adds a new key to the vec, inserting if possible otherwise doubling 
-void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *pkt)
+void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
 {
   if (v->count < v->capacity) {
     v->elt[v->count].key = key;
-    v->elt[v->count].pkt = pkt;
-    if (pkt != NULL) {
+    v->elt[v->count].pkt = e_pkt;
+    if (e_pkt != NULL) {
       unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
-      sha256_hash(pkt->data, pkt->len, sha_hash);
+      sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
       v->elt[v->count].sha_hash = sha_hash;
     }
     v->elt[v->count].count = 0;
@@ -142,10 +141,10 @@ void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *pkt)
     e[i].sha_hash = v->elt[i].sha_hash;
   }
   e[v->count].key = key;
-  e[v->count].pkt = pkt;
-  if (pkt != NULL) {
+  e[v->count].pkt = e_pkt;
+  if (e_pkt != NULL) {
       unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
-      sha256_hash(pkt->data, pkt->len, sha_hash);
+      sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
       v->elt[v->count].sha_hash = sha_hash;
   }
   e[v->count].count = 0;
@@ -175,7 +174,8 @@ void vec_del(volatile struct vec *v, unsigned int key)
     if (v->elt[i].key != key) continue;
     void *old = v->elt[i].pkt;
     if (old) free(old);
-    unsigned char* hash = v->elt[i].sha_hash;
+    unsigned char* hash = NULL;
+    hash = v->elt[i].sha_hash;
     if (hash) free(hash);
     v->elt[i].sha_hash = NULL;
     v->elt[i].pkt = NULL;
@@ -339,11 +339,12 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
         } while (vec_has(&v_spam, data));
         break;
       case HONEYPOT_ADD_EVIL: 
-        evil = malloc(4096);
+        evil = malloc(sizeof(struct evilpkt));
         do {
-          fill_rand(evil->data, &pkt_len, rand(), (unsigned short)(0xffff & rand()));
-          data = djb2(evil->data, pkt_len);
+          fill_rand(evil->data, &(evil->len), rand(), (unsigned short)(0xffff & rand()));
+          data = djb2(evil->data, evil->len);
         } while (vec_has(&v_evil, data));
+        break;
       case HONEYPOT_ADD_VULNERABLE: 
         do {
           data = rand() & 0xffff;
@@ -368,7 +369,6 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
       memcpy(&(cmd->sha_hash), sha_hash, SHA256_DIGEST_LENGTH);
     }
     cmd->data_big_endian = htonl(data);
-
     return evil;
 }
 
@@ -429,7 +429,7 @@ void do_cmd(struct honeypot_command_packet *cmd, struct evilpkt *evil)
       vec_del(&v_vuln, data);
       break;
     case HONEYPOT_PRINT:
-      if (opt_verbose_net > 1) printf("[net: honeypot print request\n");
+      if (opt_verbose_net > 1) printf("[net: honeypot print request]\n");
       do_print();
       break;
   }
@@ -497,8 +497,8 @@ void print_stats(time_t end_t)
   free(ee);
   unsigned int p = npkts;
   unsigned int b = nbytes;
-  printf("[net: total packets: %d (%g pkts/sec)]\n", p, p * 1000000.0 / difftime(start_t, end_t));
-  printf("[net: total bytes: %d (%g Mbit/sec)]\n", b, b * 8.0 / difftime(start_t, end_t));
+  printf("[net: total packets: %d (%g pkts/sec)]\n", p, p / difftime(end_t, start_t));
+  printf("[net: total bytes: %d (%g Mbit/sec)]\n", b, b * 8.0 / difftime(end_t, start_t) / 1000000.0);
 }
 
 void net_send_pkts() {
@@ -525,7 +525,8 @@ void net_send_pkts() {
 
     //if its time to print, send a print command
     time_t now = time(0);
-    //TODO: need to define last_print somewhere 
+    struct timeval now_tv;
+    gettimeofday(&now_tv, NULL);
     //print every ten seconds could also print every x packets
     if(difftime(now, last_print) > 10) {
         print_stats(now);
@@ -538,10 +539,10 @@ void net_send_pkts() {
         fill_cmd(HONEYPOT_DEL_SPAMMER);
     }  else if (p < p_spam + p_evil) {
       if (need_evil || (rr & 1)) {
-        printf("sending add evil cmd");
         evil = fill_cmd(HONEYPOT_ADD_EVIL);
-      } else
+      } else {
         fill_cmd(HONEYPOT_DEL_EVIL);
+      }
     } else if (p < p_spam + p_evil + p_vuln) {
       if (need_vuln || (rr & 1))
         fill_cmd(HONEYPOT_ADD_VULNERABLE);
@@ -575,147 +576,19 @@ void net_send_pkts() {
     process(evil);
 
     sendto(sd, pkt, pkt_len, 0, (struct sockaddr *)&dest_addr, sizeof(struct sockaddr_in));
+
+    struct timeval end_tv;
+    gettimeofday(&end_tv, NULL);
     unsigned int wait = exp_rand(net_mean);
 
     struct timespec wait_time;
     wait_time.tv_sec = 0;
-    wait_time.tv_nsec = wait * 1000;
+    wait_time.tv_nsec = (wait - (end_tv.tv_usec - now_tv.tv_usec)) * 1000;
     nanosleep(&wait_time, NULL);
 
   }
 
 }
-/*
-void net_advance(struct mips_machine *m)
-{
-  static int was_dropping;
-  int wait;
-  if (!(m->net_status & NET_S_CE) || !(m->net_status & NET_S_RX) || !m->net_dev->rx_capacity)
-    return;
-  t_start = m->core[0].data.COP[0].CPR[C0_CYCLES];
-  if (m->net_next == 0) {
-    wait = exp_rand(m->net_mean);
-    if (m->opt_verbose_net > 4) printf("net: next packet will arrive in %d usec (mean inter-arrival is %g usec = %g sec)\n", wait, m->net_mean, m->net_mean/1000000);
-    m->net_next = m->core[0].data.COP[0].CPR[C0_CYCLES] + wait * CPU_CYCLES_PER_USEC;
-  } 
-  while (m->core[0].data.COP[0].CPR[C0_CYCLES] >= m->net_next) {
-
-    if (m->net_dev->rx_head != m->net_dev->rx_tail && 
-  (m->net_dev->rx_head & (m->net_dev->rx_capacity-1)) == (m->net_dev->rx_tail & (m->net_dev->rx_capacity-1))) {
-      // rx ring is full
-      if (!was_dropping && m->opt_verbose_net)
-  printf("net: rx ring is full: capacity=%d head=%d tail=%d\n", m->net_dev->rx_capacity, m->net_dev->rx_head, m->net_dev->rx_tail);
-
-drop:
-      if (!was_dropping && m->opt_verbose_net)
-  printf("net: dropping packets\n");
-      m->net_drops++;
-      was_dropping = 1;
-      goto out;
-    }
-    was_dropping = 0;
-
-    // pick random packet contents
-    int need_spam = (v_spam.count < v_spam.target) ? 1 : 0; 
-    int need_evil = (v_evil.count < v_evil.target) ? 1 : 0; 
-    int need_vuln = (v_vuln.count < v_vuln.target) ? 1 : 0; 
-
-    int p_spam = need_spam ? 200 : 1;
-    int p_evil = need_evil ? 200 : 1;
-    int p_vuln = need_vuln ? 200 : 1;
-
-    int rr = rand();
-    int p = rr % 1024;
-    rr /= 1024;
-    struct evilpkt *evil = NULL;
-    if (m->net_pkts - last_print_c > 1000 && m->core[0].data.COP[0].CPR[C0_CYCLES] - last_print_t > 10*1000000) {
-      fill_cmd(m, HONEYPOT_PRINT);
-    } else if (p < p_spam) {
-      if (need_spam || (rr & 1)) fill_cmd(m, HONEYPOT_ADD_SPAMMER);
-      else fill_cmd(m, HONEYPOT_DEL_SPAMMER);
-    }  else if (p < p_spam + p_evil) {
-      if (need_evil || (rr & 1)) evil = fill_cmd(m, HONEYPOT_ADD_EVIL);
-      else fill_cmd(m, HONEYPOT_DEL_EVIL);
-    } else if (p < p_spam + p_evil + p_vuln) {
-      if (need_vuln || (rr & 1)) fill_cmd(m, HONEYPOT_ADD_VULNERABLE);
-      else fill_cmd(m, HONEYPOT_DEL_VULNERABLE);
-    } else {
-      // not a control packet, try to match rates
-      p = rand() % 1024;
-      if (p < v_spam.probk) {
-  fill_rand(m->net_pkt, &m->net_len, pick_rand(&v_spam), (unsigned short)(0xffff & rand()));
-      } else if (p < v_spam.probk + v_evil.probk) {
-  struct evilpkt *evil = pick_randp(&v_evil);
-  if (!evil) {
-    fill_rand(m->net_pkt, &m->net_len, rand(), (unsigned short)(0xffff & rand()));
-  } else {
-    m->net_len = evil->len;
-    memcpy(m->net_pkt, evil->data, evil->len);
-  }
-      } else if (p < v_spam.probk + v_evil.probk + v_vuln.probk) {
-  fill_rand(m->net_pkt, &m->net_len, rand(), (unsigned short)pick_rand(&v_vuln));
-      } else {
-  fill_rand(m->net_pkt, &m->net_len, rand(), (unsigned short)(0xffff & rand()));
-      }
-    }
-
-    // try to put into ring
-    unsigned int slot_paddr = m->net_dev->rx_base + 8*(m->net_dev->rx_head & (m->net_dev->rx_capacity-1));
-    if (slot_paddr & 3 || pmem_type(m, slot_paddr) != DEV_TYPE_RAM ||
-  pmem_type(m, slot_paddr+4) != DEV_TYPE_RAM) {
-      if (m->opt_verbose_net)
-  printf("network card: bus error for ring buffer physical address 0x%08x\n", slot_paddr);
-      goto drop;
-    }
-
-    int err = 0;
-    unsigned int *slot = (dereference_ram_page(&m->core[0], slot_paddr>>12, &err) + (slot_paddr & 0xfff));
-    if (err) {
-      if (m->opt_verbose_net)
-  printf("network card: bus error for ring buffer slot physical address 0x%08x\n", slot_paddr);
-      goto drop;
-    }
-    unsigned int dma_base = slot[0];
-    unsigned int dma_len = slot[1];
-    if (dma_len < m->net_len) {
-      if (m->opt_verbose_net)
-  printf("network card: packet truncation error (pkt is %d bytes, buffer is %d bytes)\n", m->net_len, dma_len);
-      goto drop;
-    }
-    if (pmem_type(m, dma_base) != DEV_TYPE_RAM ||
-  pmem_type(m, dma_base+m->net_len) != DEV_TYPE_RAM) {
-      if (m->opt_verbose_net)
-  printf("network card: bus error for packet physical address 0x%08x\n", dma_base);
-      goto drop;
-    }
-    unsigned char *pmem = (dereference_ram_page(&m->core[0], dma_base>>12, &err) + (dma_base & 0xfff));
-    if (err) {
-      if (m->opt_verbose_net)
-  printf("network card: bus error for packet physical address 0x%08x\n", dma_base);
-      goto drop;
-    }
-    if (m->net_len > 4000) printf("ack!\n");
-    memcpy(pmem, m->net_pkt, m->net_len);
-    slot[1] = m->net_len;
-    m->net_dev->rx_head++;
-    m->net_pkts++;
-    m->net_bytes += m->net_len;
-
-    process(m, evil);
-
-    unsigned int t_end = m->core[0].data.COP[0].CPR[C0_CYCLES];
-    if (m->opt_verbose_net > 0 && m->opt_status && t_end - last_realprint_t >= m->opt_status) {
-      print_stats(t_end);
-      last_realprint_t = t_end;
-    }
-
-out:
-    wait = exp_rand(m->net_mean);
-    if (m->opt_verbose_net > 2) printf("net: next packet will arrive in %d usec (mean inter-arrival is %g usec = %g sec)\n", wait, m->net_mean, m->net_mean/1000000);
-    m->net_next = m->core[0].data.COP[0].CPR[C0_CYCLES] + wait * CPU_CYCLES_PER_USEC;
-
-  }
-} */
 
 void network_init(double data_rate, char* dest_address, int verbose)
 {
@@ -731,6 +604,7 @@ void network_init(double data_rate, char* dest_address, int verbose)
   vec_init(&v_vuln, 100, 10, 100);
   inet_pton(AF_INET, dest_address, &dest_ip);
   start_t = time(0);
+  last_print = time(0);
   sd = socket(PF_INET, SOCK_RAW, IPPROTO_UDP);
   if(sd < 0) {
     printf("socket() error");

@@ -504,6 +504,13 @@ void print_stats(time_t end_t)
 void net_send_pkts() {
 
   while(1) {
+    //record time for waiting purposes
+    struct timeval now_tv;
+    gettimeofday(&now_tv, NULL);
+
+    //randomize dest_addr
+    dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
+
     //pick what kind of packet you want to send
 
     //check whether the count for spammer/evil/vulnerable is under our target
@@ -525,8 +532,6 @@ void net_send_pkts() {
 
     //if its time to print, send a print command
     time_t now = time(0);
-    struct timeval now_tv;
-    gettimeofday(&now_tv, NULL);
     //print every ten seconds could also print every x packets
     if(difftime(now, last_print) > 10) {
         print_stats(now);

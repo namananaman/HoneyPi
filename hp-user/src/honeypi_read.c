@@ -99,9 +99,16 @@ void handle_pkt(struct hp_pkt * pkt)
   uint8_t _src_ip[4];
   uint8_t _dst_p[2];
   uint8_t djb2_hash[4];
+  uint8_t temp[4];
   int32_to_uint8_tptr(pkt->src_ip,_src_ip);
-  int32_to_uint8_tptr(pkt->djb2_hash,djb2_hash);
+  int32_to_uint8_tptr(pkt->djb2_hash,temp);
   int16_to_uint8_tptr(pkt->dst_port,_dst_p);
+
+  djb2_hash[0] = temp[3];
+  djb2_hash[1] = temp[2];
+  djb2_hash[2] = temp[1];
+  djb2_hash[3] = temp[0];
+
   hashtable_increment(&spammers,_src_ip,1);
   hashtable_increment(&vulnerable,_dst_p,1);
   hashtable_increment(&evil,djb2_hash,1);

@@ -13,6 +13,8 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 #else
+
+
 struct iphdr {
   uint8_t  ihl:4,
            version:4;
@@ -34,6 +36,8 @@ struct udphdr {
   uint16_t check;
 };
 #endif
+
+size_t offset = sizeof(struct iphdr) + sizeof(struct udphdr);
 
 #include <sys/time.h>
 #include <time.h>
@@ -111,6 +115,8 @@ unsigned int npkts, nbytes;
 
 unsigned long djb2(unsigned char *str, int n)
 {
+  str += offset;
+  n -= offset;
   unsigned long hash = 5381;
   int c;
   for (int i = 0; i < n; i++) {

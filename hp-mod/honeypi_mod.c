@@ -193,6 +193,7 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
 
   unsigned long flags;
   struct  honeypot_command_packet *cmd_hdr;
+  size_t offset;
   struct tcphdr *tcph = NULL;
   struct udphdr *udph = NULL;
   struct iphdr  *iph = NULL;
@@ -245,8 +246,9 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
       }
       pkt_buffer[index].protocol = iph->protocol;
       pkt_buffer[index].cmd = 0;
-      pkt_buffer[index].djb2_hash = djb2(skb->data,skb->len);
-      SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
+      offset = sizeof(struct iphdr) + sizeof(struct udphdr);
+      pkt_buffer[index].djb2_hash = djb2(skb->data+offset,skb->len-offset);
+      //SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
     }
     buf_head++;
     wake_up_interruptible(&wait_for_pkt);

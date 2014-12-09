@@ -151,7 +151,7 @@ int main(int argc, char **argv)
 
   int dev_fd = open(dev_file, O_RDONLY);
 
-  if (net_init() > 0) {
+  if (net_init() < 0) {
     printf("couldn't bind to a socket\n");
     exit(-1);
   }

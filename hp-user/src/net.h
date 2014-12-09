@@ -18,12 +18,10 @@ int read_ips(uint32_t*,uint16_t*,int);
 void print_my_addr(int);
 int create_send_socket(void);
 
-int send_cmd(int fd, int16_t port, int16_t addr, char * data, int len);
-
 int create_socket(int16_t port, int32_t addr);
 
-int read_cmd(int fd, char * data, int len);
+int read_cmd(char * data, int len);
 
 void
-bcast_cmd(int send_fd, char * data, int len);
+bcast_cmd(char * data, int len);
 #endif

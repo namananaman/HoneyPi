@@ -3,14 +3,38 @@
 #include <stdio.h>
 #include <termios.h>
 #include <sys/ioctl.h>
-#include <stropts.h>
+//#include <stropts.h>
 #include <math.h>
 #include <string.h>
 #include <stddef.h>
 #include <arpa/inet.h>
 #include <openssl/sha.h>
+#ifdef __linux__
 #include <linux/ip.h>
 #include <linux/udp.h>
+#else
+struct iphdr {
+  uint8_t  ihl:4,
+           version:4;
+  uint8_t  tos;
+  uint16_t  tot_len;
+  uint16_t  id;
+  uint16_t  frag_off;
+  uint8_t  ttl;
+  uint8_t  protocol;
+  uint16_t check;
+  uint32_t  saddr;
+  uint32_t  daddr;
+  /*The options start here. */
+};
+struct udphdr {
+  uint16_t  source;
+  uint16_t  dest;
+  uint16_t  len;
+  uint16_t check;
+};
+#endif
+
 #include <sys/time.h>
 #include <time.h>
 #include <math.h>
@@ -60,7 +84,7 @@ time_t start_t;
 #define N_HI 60
 #define M_LO 10 // packet match rates are around 20 +/ 10 percent
 #define M_LO 30
-*/
+ */
 
 struct evilpkt {
   unsigned int len;
@@ -97,9 +121,9 @@ unsigned long djb2(unsigned char *str, int n)
 }
 //takes a string and an output buffer of length SHA256_DIGEST_LENGTH
 void sha256_hash(unsigned char* str, int len, unsigned char* obuf) {
-    //unsigned char digest[SHA256_DIGEST_LENGTH];
-    //SHA256(str, strlen(str), digest);
-    SHA256(str, len, obuf);
+  //unsigned char digest[SHA256_DIGEST_LENGTH];
+  //SHA256(str, strlen(str), digest);
+  SHA256(str, len, obuf);
 }
 //initializes a vector used to track the statistics
 void vec_init(volatile struct vec *v, int n, int target, int probk)
@@ -143,9 +167,9 @@ void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
   e[v->count].key = key;
   e[v->count].pkt = e_pkt;
   if (e_pkt != NULL) {
-      unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
-      sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
-      v->elt[v->count].sha_hash = sha_hash;
+    unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
+    sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
+    v->elt[v->count].sha_hash = sha_hash;
   }
   e[v->count].count = 0;
   for (int i = 0; i < n; i++)
@@ -155,7 +179,7 @@ void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
   v->capacity = v->capacity * 2;
   v->count = v->count + 1;
   free(old);
-  
+
   if (v->count > 1) {
     int j = v->count - 1;
     int i = rand() % v->count;
@@ -245,131 +269,132 @@ unsigned int vec_has(volatile struct vec *v, unsigned int key)
 
 void fill_rand(unsigned char *data, unsigned int* len_ptr, unsigned int src_addr, unsigned short dst_port) {
 
-    int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
+  int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
 
-    // pick a random packet length
-    double r = (double)rand()/(double)RAND_MAX;
-    unsigned int len = NET_MINPKT + (unsigned int)(r * (_NET_MAXPKT-NET_MINPKT));
-    if (len < NET_MINPKT) len = NET_MINPKT;
-    else if (len > _NET_MAXPKT) len = _NET_MAXPKT;
-    *len_ptr  = len;
+  // pick a random packet length
+  double r = (double)rand()/(double)RAND_MAX;
+  unsigned int len = NET_MINPKT + (unsigned int)(r * (_NET_MAXPKT-NET_MINPKT));
+  if (len < NET_MINPKT) len = NET_MINPKT;
+  else if (len > _NET_MAXPKT) len = _NET_MAXPKT;
+  *len_ptr  = len;
 
-    struct iphdr *p = (void *)data;
-    p->version = 0x4;
-    p->ihl = 0x5;
-    p->tos = 16;
-    p->tot_len = htons(len);
-    p->id = htons((unsigned short)rand());
-    p->frag_off = 0;
-    p->ttl = 125;
-    p->protocol = 0x11;
-    p->check = 0;
-    p->saddr = htonl(src_addr);
-    p->daddr = dest_ip.s_addr;
+  struct iphdr *p = (void *)data;
+  p->version = 0x4;
+  p->ihl = 0x5;
+  p->tos = 16;
+  p->tot_len = htons(len);
+  p->id = htons((unsigned short)rand());
+  p->frag_off = 0;
+  p->ttl = 125;
+  p->protocol = 0x11;
+  p->check = 0;
+  p->saddr = htonl(src_addr);
+  p->daddr = dest_ip.s_addr;
 
-    struct udphdr *u = (struct udphdr *) (((void*) data) + sizeof(struct iphdr));
-    u->source = htons((unsigned short)rand());
-    u->dest = htons(dst_port);
-    u->len = htons(len - sizeof(struct iphdr));
-    u->check = 0;
+  struct udphdr *u = (struct udphdr *) (((void*) data) + sizeof(struct iphdr));
+  u->source = htons((unsigned short)rand());
+  u->dest = htons(dst_port);
+  u->len = htons(len - sizeof(struct iphdr));
+  u->check = 0;
 
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(dst_port);
-    dest_addr.sin_addr = dest_ip;
+  dest_addr.sin_family = AF_INET;
+  dest_addr.sin_port = htons(dst_port);
+  dest_addr.sin_addr = dest_ip;
 
-    for (int i = data_start; i < len; i++)
-      data[i] = (unsigned char)rand();
+  for (int i = data_start; i < len; i++)
+    data[i] = (unsigned char)rand();
 
-    if (len >= 28 + 4) {
-      if (*(unsigned short *)(data+28) == ntohs(HONEYPOT_SECRET)
-    || *(unsigned short *)(data+28) == HONEYPOT_SECRET)
-  *(unsigned short *)(data+28) = 0;
-    }
+  if (len >= 28 + 4) {
+    if (*(unsigned short *)(data+28) == ntohs(HONEYPOT_SECRET)
+        || *(unsigned short *)(data+28) == HONEYPOT_SECRET)
+      *(unsigned short *)(data+28) = 0;
+  }
 }
 
 struct evilpkt *fill_cmd(unsigned short cmd_id) {
 
-    int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
+  int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
 
-    // pick a random packet length
-    double r = (double)rand()/(double)RAND_MAX;
-    unsigned int len = NET_MINPKT + (unsigned int)(r*(_NET_MAXPKT-NET_MINPKT));
-    if (len < sizeof(struct honeypot_command_packet)) len = sizeof(struct honeypot_command_packet);
-    else if (len > _NET_MAXPKT) len = _NET_MAXPKT;
-    pkt_len = len;
+  // pick a random packet length
+  double r = (double)rand()/(double)RAND_MAX;
+  unsigned int len = NET_MINPKT + (unsigned int)(r*(_NET_MAXPKT-NET_MINPKT));
+  if (len < sizeof(struct honeypot_command_packet)) len = sizeof(struct honeypot_command_packet);
+  else if (len > _NET_MAXPKT) len = _NET_MAXPKT;
+  pkt_len = len;
 
-    struct iphdr *p = (void *)pkt;
-    p->version = 0x4;
-    p->ihl = 0x5;
-    p->tos = 16;
-    p->tot_len = htons(len);
-    p->id = htons((unsigned short)rand());
-    p->frag_off = 0;
-    p->ttl = 125;
-    p->protocol = 0x11;
-    p->check = 0;
-    p->saddr = htonl(rand());
-    p->daddr = dest_ip.s_addr;
+  struct iphdr *p = (void *)pkt;
+  p->version = 0x4;
+  p->ihl = 0x5;
+  p->tos = 16;
+  p->tot_len = htons(len);
+  p->id = htons((unsigned short)rand());
+  p->frag_off = 0;
+  p->ttl = 125;
+  p->protocol = 0x11;
+  p->check = 0;
+  p->saddr = htonl(rand());
+  p->daddr = dest_ip.s_addr;
 
-    struct udphdr *u = (struct udphdr *) (((void*) pkt) + sizeof(struct iphdr));
-    u->source = htons((unsigned short)rand());
-    u->dest = htons((unsigned short)rand());
-    u->len = htons(len - sizeof(struct iphdr));
-    u->check = 0;
+  struct udphdr *u = (struct udphdr *) (((void*) pkt) + sizeof(struct iphdr));
+  u->source = htons((unsigned short)rand());
+  u->dest = htons((unsigned short)rand());
+  u->len = htons(len - sizeof(struct iphdr));
+  u->check = 0;
 
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = u->dest;
-    dest_addr.sin_addr = dest_ip;
+  dest_addr.sin_family = AF_INET;
+  dest_addr.sin_port = u->dest;
+  dest_addr.sin_addr = dest_ip;
 
-    for (int i = data_start + sizeof(struct honeypot_command_packet); i < len; i++)
-      pkt[i] = (unsigned char)rand();
+  for (int i = data_start + sizeof(struct honeypot_command_packet); i < len; i++)
+    pkt[i] = (unsigned char)rand();
 
-    struct honeypot_command_packet *cmd = (void *)p;
-    cmd->secret_big_endian = htons(HONEYPOT_SECRET);
-    cmd->cmd_big_endian = htons(cmd_id);
-    unsigned int data = 0;
-    struct evilpkt *evil = NULL;
-    switch(cmd_id) {
-      case HONEYPOT_PRINT:
-        data = 0;
-        break;
-      case HONEYPOT_ADD_SPAMMER: 
-        do {
-          data = rand();
-        } while (vec_has(&v_spam, data));
-        break;
-      case HONEYPOT_ADD_EVIL: 
-        evil = malloc(sizeof(struct evilpkt));
-        do {
-          fill_rand(evil->data, &(evil->len), rand(), (unsigned short)(0xffff & rand()));
-          data = djb2(evil->data, evil->len);
-        } while (vec_has(&v_evil, data));
-        break;
-      case HONEYPOT_ADD_VULNERABLE: 
-        do {
-          data = rand() & 0xffff;
-        } while (vec_has(&v_vuln, data));
-        break;
-      case HONEYPOT_DEL_SPAMMER:
-        data = pick_rand(&v_spam);
-        vec_del(&v_spam, data);
-        break;
-      case HONEYPOT_DEL_EVIL:
-        data = pick_rand(&v_evil);
-        vec_del(&v_evil, data);
-        break;
-      case HONEYPOT_DEL_VULNERABLE:
-        data = pick_rand(&v_vuln);
-        vec_del(&v_vuln, data);
-        break;
-    }
-    if (evil != NULL) {
-      unsigned char sha_hash[SHA256_DIGEST_LENGTH];
-      sha256_hash(evil->data, evil->len, sha_hash);
-      memcpy(&(cmd->sha_hash), sha_hash, SHA256_DIGEST_LENGTH);
-    }
-    cmd->data_big_endian = htonl(data);
-    return evil;
+  struct honeypot_command_packet *cmd = (void *)p;
+  cmd->secret_big_endian = htons(HONEYPOT_SECRET);
+  cmd->cmd_big_endian = htons(cmd_id);
+  unsigned int data = 0;
+  struct evilpkt *evil = NULL;
+  switch(cmd_id) {
+    case HONEYPOT_PRINT:
+      data = 0;
+      break;
+    case HONEYPOT_ADD_SPAMMER: 
+      do {
+        data = rand();
+      } while (vec_has(&v_spam, data));
+      break;
+    case HONEYPOT_ADD_EVIL: 
+      evil = malloc(sizeof(struct evilpkt));
+      do {
+        fill_rand(evil->data, &(evil->len), rand(), (unsigned short)(0xffff & rand()));
+        data = djb2(evil->data, evil->len);
+      } while (vec_has(&v_evil, data));
+      break;
+    case HONEYPOT_ADD_VULNERABLE: 
+      do {
+        data = rand() & 0xffff;
+      } while (vec_has(&v_vuln, data));
+      break;
+    case HONEYPOT_DEL_SPAMMER:
+      data = pick_rand(&v_spam);
+      vec_del(&v_spam, data);
+      break;
+    case HONEYPOT_DEL_EVIL:
+      data = pick_rand(&v_evil);
+      vec_del(&v_evil, data);
+      break;
+    case HONEYPOT_DEL_VULNERABLE:
+      data = pick_rand(&v_vuln);
+      vec_del(&v_vuln, data);
+      break;
+  }
+  if (evil != NULL) {
+    size_t offset= sizeof(struct iphdr) + sizeof(struct udphdr);
+    unsigned char sha_hash[SHA256_DIGEST_LENGTH];
+    sha256_hash(evil->data+offset, evil->len-offset, sha_hash);
+    memcpy(&(cmd->sha_hash), sha_hash, SHA256_DIGEST_LENGTH);
+  }
+  cmd->data_big_endian = htonl(data);
+  return evil;
 }
 
 struct honeypot_command_packet *get_cmd()
@@ -509,7 +534,7 @@ void net_send_pkts() {
     gettimeofday(&now_tv, NULL);
 
     //randomize dest_addr
-    dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
+    //dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
 
     //pick what kind of packet you want to send
 
@@ -534,9 +559,9 @@ void net_send_pkts() {
     time_t now = time(0);
     //print every ten seconds could also print every x packets
     if(difftime(now, last_print) > 10) {
-        print_stats(now);
-        fill_cmd(HONEYPOT_PRINT);
-        last_print = now; 
+      print_stats(now);
+      fill_cmd(HONEYPOT_PRINT);
+      last_print = now; 
     } else if (p < p_spam) {
       if (need_spam || (rr & 1))
         fill_cmd(HONEYPOT_ADD_SPAMMER);
@@ -546,6 +571,7 @@ void net_send_pkts() {
       if (need_evil || (rr & 1)) {
         evil = fill_cmd(HONEYPOT_ADD_EVIL);
       } else {
+        printf("deleting evil\n");
         fill_cmd(HONEYPOT_DEL_EVIL);
       }
     } else if (p < p_spam + p_evil + p_vuln) {

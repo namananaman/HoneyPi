@@ -51,6 +51,7 @@ struct hp_pkt {
   uint16_t src_port;
   uint16_t dst_port;
   uint8_t protocol;
+  uint32_t djb2_hash;
   uint8_t hash[SHA256_DIGEST_LEN];
   uint16_t cmd;
 };

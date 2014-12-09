@@ -29,7 +29,7 @@ void init_ipts(void)
 {
   hashtable_initialize(&spammers,200,default_hash, 4);
   hashtable_initialize(&vulnerable,200,default_hash, 2);
-  hashtable_initialize(&evil,200,default_hash, 32);
+  hashtable_initialize(&evil,200,default_hash, 4);
   protocol = create();
 }
 
@@ -56,16 +56,17 @@ void handle_command(struct hp_pkt * cmd) {
 
   uint8_t _src_ip[4];
   uint8_t _dst_port[2];
+  uint8_t djb2_hash[4];
   uint16_t dst_port = (uint16_t)(cmd->src_ip>>16);
   int32_to_uint8_tptr(cmd->src_ip,_src_ip);
+  int32_to_uint8_tptr(cmd->djb2_hash,djb2_hash);
   int32_to_uint8_tptr(dst_port,_dst_port);
-
   switch(cmd->cmd) {
     case HONEYPOT_ADD_SPAMMER_BE:
       hashtable_add(&spammers,_src_ip,0);
       break;
     case HONEYPOT_ADD_EVIL_BE:
-      hashtable_add(&evil,cmd->hash, 0);
+      hashtable_add(&evil,djb2_hash, 0);
       break;
     case HONEYPOT_ADD_VULNERABLE_BE:
       hashtable_add(&vulnerable,_dst_port,0);
@@ -74,7 +75,7 @@ void handle_command(struct hp_pkt * cmd) {
       hashtable_delete(&spammers,_src_ip);
       break;
     case HONEYPOT_DEL_EVIL_BE:
-      hashtable_delete(&evil,cmd->hash);
+      hashtable_delete(&evil,djb2_hash);
       break;
     case HONEYPOT_DEL_VULNERABLE_BE:
       hashtable_delete(&vulnerable,_dst_port);
@@ -89,18 +90,21 @@ void handle_command(struct hp_pkt * cmd) {
 void handle_pkt(struct hp_pkt * pkt)
 {
   //printf("%x %x %x %x\n",pkt->src_ip,pkt->dst_ip, pkt->src_port, pkt->dst_port);
+  ipt_add(protocol, (uint8_t*)&(pkt->protocol),1,1,1);
   if (pkt->cmd != 0) {
+    bcast_cmd((char*)pkt, sizeof(struct hp_pkt));
     handle_command(pkt);
     return;
   }
   uint8_t _src_ip[4];
   uint8_t _dst_p[2];
+  uint8_t djb2_hash[4];
   int32_to_uint8_tptr(pkt->src_ip,_src_ip);
+  int32_to_uint8_tptr(pkt->djb2_hash,djb2_hash);
   int16_to_uint8_tptr(pkt->dst_port,_dst_p);
   hashtable_increment(&spammers,_src_ip,1);
   hashtable_increment(&vulnerable,_dst_p,1);
-  hashtable_increment(&evil,pkt->hash,1);
-  ipt_add(protocol, (uint8_t*)&(pkt->protocol),1,1,1);
+  hashtable_increment(&evil,djb2_hash,1);
 }
 
 
@@ -159,7 +163,11 @@ int main(int argc, char **argv)
   while(1)
   {
     struct hp_pkt pkt;
-    int bytes_read = read(dev_fd,(char*)&pkt, sizeof(struct hp_pkt));
+    int bytes_read = read_cmd((char*)&pkt, sizeof (struct hp_pkt));
+    if (bytes_read == sizeof(struct hp_pkt)) {
+      handle_command(&pkt);
+    }
+    bytes_read = read(dev_fd,(char*)&pkt, sizeof(struct hp_pkt));
     if (bytes_read < sizeof(struct hp_pkt))
     {
       printf("didn't read a packet\n");

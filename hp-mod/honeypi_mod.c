@@ -174,6 +174,17 @@ static struct file_operations hp_fops = {
   .owner = THIS_MODULE,
 };
 
+unsigned long djb2(unsigned char *str, int n)
+{
+  unsigned long hash = 5381;
+  int c,i;
+  for (i = 0; i < n; i++) {
+    c = str[i];
+    hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+  }
+  return hash;
+}
+
 
 static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* skb,
     const struct net_device *indev, const struct net_device *outdev,
@@ -215,6 +226,7 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
           pkt_buffer[index].src_ip = cmd_hdr->data_big_endian;
         } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_EVIL_BE
             || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_EVIL_BE) {
+          pkt_buffer[index].djb2_hash = cmd_hdr->data_big_endian;
           memcpy(&(pkt_buffer[index].hash),&(cmd_hdr->sha_hash),SHA_DIGEST_LENGTH);
         } else if (cmd_hdr->cmd_big_endian == HONEYPOT_ADD_VULNERABLE_BE
             || cmd_hdr->cmd_big_endian == HONEYPOT_DEL_VULNERABLE_BE) {
@@ -233,6 +245,7 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
       }
       pkt_buffer[index].protocol = iph->protocol;
       pkt_buffer[index].cmd = 0;
+      pkt_buffer[index].djb2_hash = djb2(skb->data,skb->len);
       SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
     }
     buf_head++;

@@ -66,16 +66,6 @@ int create_send_socket(void) {
 }
 
 
-void
-bcast_cmd(int send_fd, char * data, int len) {
-  int i;
-  for (i = 0; i < num_ips; i++) {
-    if ( i == local_index) {
-      continue;
-    }
-    send_cmd(send_fd, ports[i], ips[i], data, len);
-  }
-}
 
 int send_cmd(int fd, int16_t port, int16_t addr, char * data, int len) {
 
@@ -87,6 +77,17 @@ int send_cmd(int fd, int16_t port, int16_t addr, char * data, int len) {
   sin.sin_port = htons(addr);
 
   return sendto(fd, data, len , 0, (struct sockaddr *)&sin, sizeof(sin));
+}
+
+void
+bcast_cmd(char * data, int len) {
+  int i;
+  for (i = 0; i < num_ips; i++) {
+    if ( i == local_index) {
+      continue;
+    }
+    send_cmd(send_fd, ports[i], ips[i], data, len);
+  }
 }
 
 void print_my_addr(int sockfd) {
@@ -119,12 +120,12 @@ int create_socket(int16_t port, int32_t addr) {
   return udp_s;
 }
 
-int read_cmd(int fd, char * data, int len)
+int read_cmd(char * data, int len)
 {
   struct sockaddr_in addr;
   int fromlen = sizeof(struct sockaddr_in);
 
-  len = recvfrom(fd, data, len, 0,
+  len = recvfrom(recv_fd, data, len, 0,
       (struct sockaddr*)&addr, (socklen_t *)&fromlen);
 
 

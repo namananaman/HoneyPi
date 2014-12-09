@@ -232,6 +232,15 @@ struct evilpkt *pick_randp(volatile struct vec *v)
   else if (r >= v->count) r = v->count - 1;
   return v->elt[r].pkt;
 }
+
+struct evilpkt *vec_get(volatile struct vec *v, unsigned int key) {
+  if (v->count == 0) return 0;
+  for (int i = 0; i < v->count; i++) 
+    if (v->elt[i].key == key)
+      return v->elt[i].pkt;
+  return NULL;
+}
+  
 //checks if a vec contains a key
 unsigned int vec_has(volatile struct vec *v, unsigned int key)
 {
@@ -356,7 +365,7 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
         break;
       case HONEYPOT_DEL_EVIL:
         data = pick_rand(&v_evil);
-        vec_del(&v_evil, data);
+	evil = vec_get(&v_evil, data);
         break;
       case HONEYPOT_DEL_VULNERABLE:
         data = pick_rand(&v_vuln);
@@ -367,6 +376,8 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
       unsigned char sha_hash[SHA256_DIGEST_LENGTH];
       sha256_hash(evil->data, evil->len, sha_hash);
       memcpy(&(cmd->sha_hash), sha_hash, SHA256_DIGEST_LENGTH);
+      if (cmd_id == HONEYPOT_DEL_EVIL)
+        vec_del(&v_evil, data);
     }
     cmd->data_big_endian = htonl(data);
     return evil;
@@ -408,7 +419,13 @@ void do_cmd(struct honeypot_command_packet *cmd, struct evilpkt *evil)
       vec_add(&v_spam, data, NULL);
       break;
     case HONEYPOT_ADD_EVIL:
-      if (opt_verbose_net > 1) printf("[net: honeypot add evil: %x]\n", data);
+      if (opt_verbose_net > 1) {
+        printf("[net: honeypot add evil: djb2: %x, sha256: ", data);
+        for (int k = 0; k < SHA256_DIGEST_LENGTH; k++) {
+          printf("%x", cmd->sha_hash[k]);
+        }
+        printf("]\n");
+      }
       if (!evil) printf("simulator warning: internal error 0xeb11\n");
       else vec_add(&v_evil, data, evil);
       break;
@@ -421,7 +438,13 @@ void do_cmd(struct honeypot_command_packet *cmd, struct evilpkt *evil)
       vec_del(&v_spam, data);
       break;
     case HONEYPOT_DEL_EVIL:
-      if (opt_verbose_net > 1) printf("[net: honeypot delete evil: %x]\n", data);
+      if (opt_verbose_net > 1) {
+        printf("[net: honeypot add evil: djb2: %x, sha256: ", data);
+        for (int k = 0; k < SHA256_DIGEST_LENGTH; k++) {
+          printf("%x", cmd->sha_hash[k]);
+        }
+        printf("]\n");
+      }
       vec_del(&v_evil, data);
       break;
     case HONEYPOT_DEL_VULNERABLE:
@@ -486,7 +509,12 @@ void print_stats(time_t end_t)
     else printf("%12d 0x%08x", es[i].count, es[i].key);
     printf("    |  ");
     if (i >= v_evil.count) printf("%23s", i == v_evil.count && i == 0 ? "        empty        " : "");
-    else printf("%12d 0x%08x", ee[i].count, ee[i].key);
+    else {
+       printf("%12d djb2: 0x%08x, sha 256: ", ee[i].count, ee[i].key);
+       for (int k = 0; k < SHA256_DIGEST_LENGTH; k++) {
+         printf("%x", ee[i].sha_hash[k]); 
+       }
+    }
     printf("    |  ");
     if (i >= v_vuln.count) printf("%23s", i == v_vuln.count && i == 0 ? "        empty        " : "");
     else printf("%12d 0x%04x", ev[i].count, ev[i].key);

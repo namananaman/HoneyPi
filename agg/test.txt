@@ -12,3 +12,18 @@ Protocols:
 5:4
 4:5
 End of output.
+
+Begin honeypot output:
+Spammers:
+12.13.14.15:200
+44.444.44.444:69
+Vulnerable Ports:
+1202:11
+4411:55
+Evil Packets:
+deadbeef:99
+12345654:543
+Protocols:
+5:4
+4:5
+End of output.

@@ -118,7 +118,8 @@ void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
     v->elt[v->count].pkt = e_pkt;
     if (e_pkt != NULL) {
       unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
-      sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
+      int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
+      sha256_hash(&e_pkt->data[data_start], e_pkt->len - data_start, sha_hash);
       v->elt[v->count].sha_hash = sha_hash;
     }
     v->elt[v->count].count = 0;
@@ -144,7 +145,8 @@ void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
   e[v->count].pkt = e_pkt;
   if (e_pkt != NULL) {
       unsigned char* sha_hash = malloc(SHA256_DIGEST_LENGTH);
-      sha256_hash(e_pkt->data, e_pkt->len, sha_hash);
+      int data_start = sizeof(struct iphdr) + sizeof(struct udphdr);
+      sha256_hash(&e_pkt->data[data_start], e_pkt->len - data_start, sha_hash);
       v->elt[v->count].sha_hash = sha_hash;
   }
   e[v->count].count = 0;
@@ -374,7 +376,7 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
     }
     if (evil != NULL) {
       unsigned char sha_hash[SHA256_DIGEST_LENGTH];
-      sha256_hash(evil->data, evil->len, sha_hash);
+      sha256_hash(&evil->data[data_start], evil->len - data_start, sha_hash);
       memcpy(&(cmd->sha_hash), sha_hash, SHA256_DIGEST_LENGTH);
       if (cmd_id == HONEYPOT_DEL_EVIL)
         vec_del(&v_evil, data);

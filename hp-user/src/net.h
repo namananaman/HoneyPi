@@ -24,4 +24,15 @@ int read_cmd(char * data, int len);
 
 void
 bcast_cmd(char * data, int len);
+
+void setup_agg_addr(uint16_t port, uint32_t addr);
+
+int create_agg_socket();
+void connect_agg();
+
+void close_agg();
+
+int write_agg(void * buff, size_t len);
+
+void write_clear(void);
 #endif

@@ -1,9 +1,14 @@
 
 #include "net.h"
+#include <stdlib.h>
 #include  <config_honeypi.h>
 
 static int recv_fd;
 static int send_fd;
+static int agg_fd;
+struct sockaddr_in agg_server;
+
+
 static char * config_file = "honeypi.config";
 
 static uint32_t ips[MAX_NUM_IPS];
@@ -12,14 +17,47 @@ static uint16_t ports[MAX_NUM_IPS];
 static int local_index = -1;
 static int num_ips;
 
+void setup_agg_addr(uint16_t port, uint32_t addr){
+  agg_server.sin_family = AF_INET;
+  agg_server.sin_addr.s_addr = htonl(addr);
+  agg_server.sin_port = htons(port);
+}
 
+int create_agg_socket() {
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0){
+    printf("SOCKET Error\n");
+    exit(-1);
+  }
+  return fd;
+}
+
+void connect_agg() {
+  agg_fd = create_agg_socket();
+  if (connect(agg_fd,(const struct sockaddr*)&agg_server, sizeof(agg_server))< 0) {
+    printf("couldn't connect\n");
+    exit(-1);
+  }
+}
+void close_agg() {
+   close(agg_fd);
+}
+
+
+int write_agg(void * buff, size_t len) {
+  return write(agg_fd, buff,len);
+}
+char * clear = "CLEAR_STATISTICS\n";
+void write_clear(void) {
+  write_agg(clear,strlen(clear));
+}
 int net_init(void) {
 
-
   int ret = read_ips(ips,ports, MAX_NUM_IPS);
+  if (ret < 2) { printf("invalid config file\n"); exit(-1);}
   int i;
   recv_fd = -1;
-  for (i = 0; i < ret; i++) {
+  for (i = 0; i < ret-1; i++) {
     recv_fd = create_socket(ports[i],ips[i]);
     if (recv_fd > 0) {
       break;
@@ -39,6 +77,12 @@ int net_init(void) {
   print_my_addr(recv_fd);
   printf ("Port is %d\n", ports[i]);
   #endif
+
+  setup_agg_addr(ports[ret-1], ips[ret-1]);
+
+  connect_agg();
+  write_clear();
+  close_agg();
 
   send_fd = create_send_socket();
 
@@ -99,6 +143,7 @@ void print_my_addr(int sockfd) {
   printf("%s\n", inet_ntoa( localAddress.sin_addr));
 
 }
+
 int create_socket(int16_t port, int32_t addr) {
 
   struct sockaddr_in sin;

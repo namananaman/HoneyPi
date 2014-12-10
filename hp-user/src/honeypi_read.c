@@ -16,7 +16,16 @@
 #include "ip-tree.h"
 #include "hashtable.h"
 #include "net.h"
+#define USE_NET 1
+#if USE_NET
+#define print(...) sprintf(buf,__VA_ARGS__); write_agg(buf,strlen(buf))
+#else
+#define print(...) printf(__VA_ARGS__)
+#endif
 
+
+
+static char buf[256];
 void int_handler(int sig);
 static char * dev_file = "/dev/honeypi";
 
@@ -117,43 +126,45 @@ void handle_pkt(struct hp_pkt * pkt)
 
 void print_ip (void * val, uint8_t * key, int k_len )
 {
-  printf("%u.%u.%u.%u:",key[0],key[1],key[2],key[3]);
-  printf("%ld\n",(long)val);
+  print("%u.%u.%u.%u:",key[0],key[1],key[2],key[3]);
+  print("%ld\n",(long)val);
 }
 
 void print_port(void * val, uint8_t * key, int k_len)
 {
   uint16_t port = (key[0] << 8) | key[1];
-  printf("%u:",port);
-  printf("%ld\n",(long)val);
+  print("%u:",port);
+  print("%ld\n",(long)val);
 }
 void print_proto(void * val, uint8_t * key, int k_len)
 {
-  printf("%u:",key[0]);
-  printf("%ld\n",(long)val);
+  print("%u:",key[0]);
+  print("%ld\n",(long)val);
 }
 void print_evil(void *val, uint8_t * key, int k_len) {
   int i;
   for (i = 0; i < k_len; i++) {
-    printf("%02x",key[i]);
+    print("%02x",key[i]);
   }
-  printf(":%ld\n",(long)val);
+  print(":%ld\n",(long)val);
 }
 
 
 void int_handler(int sig)
 {
-  printf("Begin honeypot output:\n");
-  printf("Spammers:\n");
+  connect_agg();
+  print("Begin honeypot output:\n");
+  print("Spammers:\n");
   hashtable_iter(&spammers,print_ip);
-  printf("Vulnerable Ports:\n");
+  print("Vulnerable Ports:\n");
   hashtable_iter(&vulnerable,print_port);
-  printf("Evil Packets:\n");
+  print("Evil Packets:\n");
   hashtable_iter(&evil,print_evil);
-  printf("Protocols:\n");
+  print("Protocols:\n");
   uint8_t k;
   ipt_iter(protocol, 1,1, &k,print_proto);
-  printf("End of output.\n");
+  print("End of output.\n");
+  close_agg();
 }
 
 int main(int argc, char **argv)

@@ -256,7 +256,7 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
     printk(KERN_ERR "ring buffer full not analyzing  packet\n");
   }
   spin_unlock_irqrestore(&buffer_lock, flags);
-  if ((udph != NULL && (udph->dest == 0xA00F)) || tcph != NULL) {
+  if ((udph != NULL && udph->dest == 0xA00F) || (tcph != NULL)) {
     return NF_ACCEPT;
   } else {
     return NF_DROP;

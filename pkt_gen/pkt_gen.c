@@ -540,7 +540,7 @@ void net_send_pkts() {
     gettimeofday(&now_tv, NULL);
 
     //randomize dest_addr
-    //dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
+    dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
 
     //pick what kind of packet you want to send
 

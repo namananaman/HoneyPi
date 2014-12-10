@@ -177,11 +177,18 @@ int main(int argc, char **argv)
     printf("couldn't bind to a socket\n");
     exit(-1);
   }
-
+  int count = 1000;
   while(1)
   {
     struct hp_pkt pkt;
     int bytes_read = read_cmd((char*)&pkt, sizeof (struct hp_pkt));
+
+    // not every pi is going to get the PRINT command from the generator
+    if((--count) == 0) {
+      count = 1000;
+      int_handler(0);
+    }
+
     if (bytes_read == sizeof(struct hp_pkt)) {
       handle_command(&pkt);
     }

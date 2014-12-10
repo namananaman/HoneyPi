@@ -16,6 +16,18 @@ evil      = dict()
 evil_lock = Lock()
 protocols = dict()
 pcls_lock = Lock()
+clients   = dict()
+clients_lock = Lock()
+
+
+def create_client_dict():
+    new_dict = dict()
+    new_dict['spammers'] = dict()
+    new_dict['ports'] = dict()
+    new_dict['evil'] = dict()
+    new_dict['protocols'] = dict()
+    new_dict['lock'] = Lock()
+    return new_dict
 
 
 class ClientHandler(Thread):
@@ -23,7 +35,7 @@ class ClientHandler(Thread):
     def __init__(self, skt, skt_lock):
         Thread.__init__(self)
         self.skt = skt
-        self.lock = skt_lock
+        self.skt_lock = skt_lock
 
     def readlines(self):
         # untested
@@ -43,29 +55,40 @@ class ClientHandler(Thread):
             yield buf
 
     def aggregate(self):
-        current_dict = None
-        current_lock = None
+        global clients
+        global clients_lock
+        self.current_dict = None
+        self.current_lock = None
         for line in self.readlines():
-            if "Spammers" in line:
-                current_dict = spammers
-                current_lock = spam_lock
+            if "CLEAR_STATISTICS" in line:
+                with clients_lock:
+                    self.client_dict = create_client_dict()
+                    clients[self.address] = self.client_dict
+                continue
+            elif "Spammers" in line:
+                self.current_key = "spammers"
+                self.current_dict = spammers
+                self.current_lock = spam_lock
                 continue
             elif "Ports" in line:
-                current_dict = ports
-                current_lock = port_lock
+                self.current_key = "ports"
+                self.current_dict = ports
+                self.current_lock = port_lock
                 continue
             elif "Evil" in line:
-                current_dict = evil
-                current_lock = evil_lock
+                self.current_key = "evil"
+                self.current_dict = evil
+                self.current_lock = evil_lock
                 continue
             elif "Protocols" in line:
-                current_dict = protocols
-                current_lock = pcls_lock
+                self.current_key = "protocols"
+                self.current_dict = protocols
+                self.current_lock = pcls_lock
                 continue
             elif "Begin" in line or "End" in line:
                 continue
 
-            if not current_lock:
+            if not self.current_lock:
                 continue
             try:
                 key, value = line.split(':', 1)
@@ -73,17 +96,27 @@ class ClientHandler(Thread):
             except ValueError:
                 continue
 
-            with current_lock:
-                if key in current_dict:
-                    current_dict[key] += value
+            with self.client_dict['lock']:
+                if key not in self.client_dict[self.current_key]:
+                    self.client_dict[self.current_key][key] = 0
+                old_value = self.client_dict[self.current_key][key]
+                self.client_dict[self.current_key][key] = value
+            with self.current_lock:
+                if key in self.current_dict:
+                    self.current_dict[key] += value - old_value
                 else:
-                    current_dict[key] = value
+                    self.current_dict[key] = value - old_value
 
     def run(self):
         while True:
-            with self.lock:
+            with self.skt_lock:
                 (client, address) = self.skt.accept()
+                self.address = address[0]
                 self.client = client
+            with clients_lock:
+                if self.address not in clients:
+                    clients[self.address] = create_client_dict()
+                self.client_dict = clients[self.address]
             self.aggregate()
 
 

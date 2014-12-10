@@ -1,0 +1,17 @@
+#!/usr/bin/python
+import socket
+import time
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+def wait_u(n):
+  time.sleep(n*.001*.001)
+while True:
+  for i in range(64,128):
+    s.sendto("Hello", ("192.168.1."+str(i),5555))
+    wait_u(40)
+
+  for i in range(192,255):
+    s.sendto("Hello", ("192.168.1."+str(i),5555))
+    wait_u(40)
+

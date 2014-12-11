@@ -52,6 +52,7 @@ static DECLARE_WAIT_QUEUE_HEAD(wait_for_pkt);
 static struct hp_pkt pkt_buffer[HP_BUFFER_SIZE];
 static unsigned long buf_head;
 static unsigned long buf_tail;
+static uint32_t ndropped = 0;
 
 
 static inline struct tcphdr * ip_tcp_hdr(struct iphdr *iph)
@@ -248,12 +249,14 @@ static unsigned int hp_nf_hook(const struct nf_hook_ops *ops, struct sk_buff* sk
       pkt_buffer[index].cmd = 0;
       offset = sizeof(struct iphdr) + sizeof(struct udphdr);
       pkt_buffer[index].djb2_hash = djb2(skb->data+offset,skb->len-offset);
+      pkt_buffer[index].ndropped = ndropped;
+      pkt_buffer[index].bytes = skb->len;
       //SHA256((unsigned char*)skb->data, (size_t)skb->len, (unsigned char *)&(pkt_buffer[index].hash));
     }
     buf_head++;
     wake_up_interruptible(&wait_for_pkt);
   } else {
-    printk(KERN_ERR "ring buffer full not analyzing  packet\n");
+    ndropped ++;
   }
   spin_unlock_irqrestore(&buffer_lock, flags);
   if ((udph != NULL && udph->dest == 0xA00F) || (tcph != NULL)) {

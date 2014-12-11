@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
@@ -26,6 +27,8 @@
 
 
 static char buf[256];
+static uint32_t ndropped= 0;
+static uint16_t mbps;
 void int_handler(int sig);
 static char * dev_file = "/dev/honeypi";
 
@@ -121,6 +124,8 @@ void handle_pkt(struct hp_pkt * pkt)
   hashtable_increment(&spammers,_src_ip,1);
   hashtable_increment(&vulnerable,_dst_p,1);
   hashtable_increment(&evil,djb2_hash,1);
+
+  ndropped = pkt->ndropped;
 }
 
 
@@ -163,41 +168,58 @@ void int_handler(int sig)
   print("Protocols:\n");
   uint8_t k;
   ipt_iter(protocol, 1,1, &k,print_proto);
+  print("Perf:\n");
+  print("keys:%d\n",ndropped);
+  print("mbps:%d\n",mbps);
   print("End of output.\n");
   close_agg();
 }
-
+struct timeval t0, t1;
 int main(int argc, char **argv)
 {
   init_ipts();
 
   int dev_fd = open(dev_file, O_RDONLY);
 
-  if (net_init() > 0) {
+  if (net_init() < 0) {
     printf("couldn't bind to a socket\n");
     exit(-1);
   }
   int count = 1000;
+  gettimeofday(&t0, 0);
+  uint32_t bytes = 0;
+  uint32_t pkts = 0;
   while(1)
   {
     struct hp_pkt pkt;
     int bytes_read = read_cmd((char*)&pkt, sizeof (struct hp_pkt));
 
-    // not every pi is going to get the PRINT command from the generator
-    if((--count) == 0) {
-      count = 1000;
-      int_handler(0);
-    }
 
     if (bytes_read == sizeof(struct hp_pkt)) {
       handle_command(&pkt);
     }
+
+    // not every pi is going to get the PRINT command from the generator
+    if((--count) == 0) {
+      gettimeofday(&t1, 0);
+      long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
+      //pps = (i1000000.0*((float)pkts/(float)elapsed);
+      mbps = (int)((float)8*bytes/(float)elapsed);
+      bytes = 0;
+      pkts = 0;
+      count = 1000;
+      int_handler(0);
+      gettimeofday(&t0, 0);
+   }
+
     bytes_read = read(dev_fd,(char*)&pkt, sizeof(struct hp_pkt));
     if (bytes_read < sizeof(struct hp_pkt))
     {
       printf("didn't read a packet\n");
       exit(0);
     }
+    bytes+=pkt.bytes;
+    pkts+=1;
     handle_pkt(&(pkt));
   }
 }

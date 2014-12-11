@@ -12,6 +12,8 @@ spammers  = dict()
 spam_lock = Lock()
 ports     = dict()
 port_lock = Lock()
+perf      = dict()
+perf_lock = Lock()
 evil      = dict()
 evil_lock = Lock()
 protocols = dict()
@@ -26,6 +28,7 @@ def create_client_dict():
     new_dict['ports'] = dict()
     new_dict['evil'] = dict()
     new_dict['protocols'] = dict()
+    new_dict['perf'] = dict()
     new_dict['lock'] = Lock()
     return new_dict
 
@@ -59,6 +62,7 @@ class ClientHandler(Thread):
         global clients_lock
         self.current_dict = None
         self.current_lock = None
+        clear = False
         for line in self.readlines():
             if "CLEAR_STATISTICS" in line:
                 with clients_lock:
@@ -85,6 +89,11 @@ class ClientHandler(Thread):
                 self.current_dict = protocols
                 self.current_lock = pcls_lock
                 continue
+            elif "Perf" in line:
+                self.current_key = "perf"
+                self.current_dict = perf
+                self.current_lock = perf_lock
+
             elif "Begin" in line or "End" in line:
                 continue
 
@@ -163,6 +172,9 @@ def write_output(signal, frame):
     out_f.write("\nPROTOCOLS:\n")
     for key in protocols:
         out_f.write('%s: %d\n' % (key, protocols[key]))
+    out_f.write("\nPERF STATS:\n")
+    for key in perf:
+        out_f.write('%s: %d\n' % (key, perf[key]))
     out_f.write("\nEND OF STATISTICS")
     out_f.write("\n==============================================\n")
 

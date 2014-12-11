@@ -54,6 +54,8 @@ struct hp_pkt {
   uint32_t djb2_hash;
   uint8_t hash[SHA256_DIGEST_LEN];
   uint16_t cmd;
+  uint32_t ndropped;
+  uint32_t bytes;
 };
 
 #endif /* __SNIFFER_IOCTL__ */

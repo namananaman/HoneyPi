@@ -69,90 +69,58 @@ img { padding-top: 1em; padding-left: 1em; }
 
     <h2>What to submit</h2>
 
-    <p>Submit your well-commented <tt>vmem.c</tt> file and your <tt>vsimulate</tt> binary. You should not have to change any other files. Not including
-    comments, it is feasible to complete this lab in about 50 lines of code.</li>
+    <p>Submit your well-commented <tt>honeypi_read.c</tt>, <tt>net.c</tt> file and your <tt>honeypi_read</tt> binary.
+    
    
     <h2>Overview of source files</h2>
 
-    <p>All of the source files for the simulator are available in the course directory in the CSUG Lab. The top level
-    directory contains the simulator source code and a Makefile for compiling it. You should copy the files to your own
+    <p>All of the source files for the kernel module and packet generator are available in the course directory in the CSUG Lab. The top level
+    directory contains the source code and a Makefile for compiling it. You should copy the files to your own
     directory to work on them:</p>
-    <pre> $ cp -r /courses/cs3410/lab4 ~/lab4
+    <pre> $ cp -r /courses/cs3410/lab_honeypot ~/lab_honeypot
  $ cd ~/lab4</pre>
      <p>If you will be using the VM instead of CSUG then follow the instructions <a href="environment.html">here</a>.</p>
     
-    <p> The <tt>mips</tt> subdirectory contains an example MIPS program that uses shared memory (you can also write your
-    own MIPS test programs if needed), and a Makefile for compiling it.</p>
+    <p> The <tt>hp-mod</tt> subdirectory contains the kernel module, and a Makefile for compiling it. An example honeypi_read program is in hp-user. It includes the code that reads from the kernel module (but nothing else)</p>
 
     <p>The most relevant files for you are:</p>
     <ul>
-      <li><b>mem.h</b> Contains detailed descriptions and prototypes for the functions you must implement, along with
-      some prototypes for functions that you will likely need to call (e.g. to allocate physical pages).</li>
-      <li><b>vmem.c</b> You write this file. It should contain all of your implementation. The simulator will not
-      compile without it.</li>
-      <li><b>mips/hello.c</b> This compiles into a MIPS executable. If your virtual memory code is working correctly,
-      you should at least be able to run this program with no errors.</li>
+      <li><b>hp_ioctl.h</b> Contains the structs and constants associated with the command packets.</li>
+      <li><b>hp-user/net.c</b> You write this file. It should contain all of your implementation that pertains to the network. </li>
+      <li><b>hp-user/honeypi_read.c</b> This compiles into a executable. When this is correct is should send all the statistics about the packets the kernel module has received</li>
     </ul>
 
-    <p>The <tt>_mem_ref()</tt> function is used by the simulator to traverse the page tables on each memory access to a
-    virtual address; it is implemented in <b>mem.c</b>. You may find it helpful to at least look at this function to be
-    sure you understand what it is doing. Otherwise, most of the simulator code is not terribly interesting.  In rough
-    order of interest, are:</p>
-    <ul>
-      <li><b>pmem.c</b> Simulates physical memory as a big array of bytes.</li>
-      <li><b>syscalls.c</b> Simulates system calls.</li>
-      <li><b>mem.c</b> Helper routines for managing memory.</li>
-      <li><b>readelf.c</b> Parses and loads MIPS executable binaries.</li>
-      <li><b>run.c</b> Simulates the the CPU datapath.</li>
-      <li><b>main.c</b> Main entry point and command line processing.</li>
-      <li><b>sim.h</b> Prototypes and definitions.</li>
-      <li><b>debug.c</b> Interactive debugger.</li>
-      <li><b>disasm.c</b> Disassembler (used when debugging).</li>
-      <li><b>readline.c</b> Keyboard input (used when debugging).</li>
-      <li><b>readline.h</b> Keyboard input (used when debugging).</li>
-    </ul>
-  
-  <h2>Compiling the Code</h2>
+  <h2>Compiling the Code</h2
     
   <p>cd to the skeleton code directory</p>
-  <pre>$ make</pre>
+  <pre>$ make</pre> 
+  <p>On a different machine (or window)</p> 
+    <pre>./agg_server.py</pre>
   
-  <p>To compile the test program (only do this once) from the lab4/ directory:</p>
-  <pre>$ cd mips/
-$ make
-$ cd ..</pre>
-  
-  <p>To run the test program:</p>
-  <pre>./vsimulate mips/hello</pre>
-  
-  <h2>Tools</h2>
+  <p>To install the kernel module :</p>
+    <pre>cd hp-mod</pre>
+    <pre>sudo insmod honeypi.ko</pre>
 
-    <p>We have slightly upgraded the simulator's built-in interactive debugger (the "-d" option) so that it can work
-    with simulated virtual memory. The "info memory" command now prints out information about both simulated physical
-    and virtual memory.  And the "x" command to examine memory has been replaced with two commands: "vx" for examining
-    simulated virtual memory; and "px" for examining simulated physical memory.</p>
+  <p>You need to find out what the major number of the module is, this can
+  be done by running </p>
+    <pre>cat /proc/devices</pre> 
+  <p>and finding the entry for honeypi</p>
 
-    <p>The simulator itself runs on x86 linux platforms, and so is compiled with regular <tt>gcc</tt> instead of
-    <tt>mipsel-linux-gcc</tt>. If you need to debug the simulator, try the <tt>gdb</tt> interactive debugger. You should
-    find that it has an interface much like the simulator's built-in MIPS debugger:</p>
-    <pre>    $ gdb vsimulate
-    GNU gdb 6.8-debian
-    Copyright (C) 2008 Free Software Foundation, Inc.
-    License GPLv3+: GNU GPL version 3 or later &lt;http://gnu.org/licenses/gpl.html&gt;
-    This is free software: you are free to change and redistribute it.
-    There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
-    and "show warranty" for details.
-    This GDB was configured as "i486-linux-gnu"...
-    (gdb) break map_page 
-    Breakpoint 1 at 0x8050c0d: file vmem.c, line 25.
-    (gdb) run mips/hello
-    Starting program: /home/hw342/hw4/vsimulate mips/hello
-    [Thread debugging using libthread_db enabled]
-    [New Thread 0xb7ea16c0 (LWP 6124)]
-    [Switching to Thread 0xb7ea16c0 (LWP 6124)]
-    Breakpoint 1, map_page (context=290816, vaddr=4194304, writeable=0, executable=0) at vmem.c:25
-    (gdb)</pre>
+  <p>Once you have the major number. Run:</p>
 
+    <pre>mknod /dev/honeypi c "major number"</pre>
+
+  This creates the device file.
+
+  <p>To run the local honeypot/p>
+  <pre>cd hp-user</pre>
+  <pre>sudo ./honeypi_read</pre>
+  <h2>Help</h2>
+
+  There are many resources available to help you with Linux network programming.
+  <ul>
+  <li>  <a href="http://beej.us/guide/bgnet/">Beej's Network Programming Guide</a> </ul>
+  </ul>
   </div>
 </div>
 </body>

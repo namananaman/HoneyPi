@@ -111,14 +111,14 @@ int create_send_socket(void) {
 
 
 
-int send_cmd(int fd, int16_t port, int16_t addr, char * data, int len) {
+int send_cmd(int fd, uint16_t port, uint32_t addr, char * data, int len) {
 
   struct sockaddr_in sin;
 
   memset(&sin, 0, sizeof(sin));
   sin.sin_family = SOCK_DGRAM;
-  sin.sin_addr.s_addr = htonl(port);
-  sin.sin_port = htons(addr);
+  sin.sin_addr.s_addr = htonl(addr);
+  sin.sin_port = htons(port);
 
   return sendto(fd, data, len , 0, (struct sockaddr *)&sin, sizeof(sin));
 }

@@ -185,7 +185,7 @@ int main(int argc, char **argv)
     printf("couldn't bind to a socket\n");
     exit(-1);
   }
-  int count = 1000;
+  int count = 50000;
   gettimeofday(&t0, 0);
   uint32_t bytes = 0;
   uint32_t pkts = 0;
@@ -200,14 +200,14 @@ int main(int argc, char **argv)
     }
 
     // not every pi is going to get the PRINT command from the generator
-    if((--count) == 0) {
+    if((count) == 0) {
       gettimeofday(&t1, 0);
       long elapsed = (t1.tv_sec-t0.tv_sec)*1000000 + t1.tv_usec-t0.tv_usec;
       //pps = (i1000000.0*((float)pkts/(float)elapsed);
       mbps = (int)((float)8*bytes/(float)elapsed);
       bytes = 0;
       pkts = 0;
-      count = 1000;
+      count = 50000;
       int_handler(0);
       gettimeofday(&t0, 0);
    }
@@ -220,6 +220,7 @@ int main(int argc, char **argv)
     }
     bytes+=pkt.bytes;
     pkts+=1;
+    if(pkt.protocol == 17) count--;
     handle_pkt(&(pkt));
   }
 }

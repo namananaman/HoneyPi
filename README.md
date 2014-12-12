@@ -16,14 +16,20 @@ Running
 
 On each host run setup\_network.sh. This will make sure the buffers are of sufficient size.
 
+Make sure the config file 'hp-user/honeypi.config' has the correct IP address, the address
+and ports of the pi must be in the first lines and the address and port of the aggregator
+server must be in the last line. The config file we used is in the repository.
 
-On the switch make sure IP routing is enabled and run
+On the switch make sure IP routing is enabled and run in the config terminal
 
   `ip route add 192.168.2.0/26 192.168.2.4`
   `ip route add 192.168.2.64/26 192.168.2.3`
   `ip route add 192.168.2.128/26 192.168.2.4`
   `ip route add 192.168.2.192/26 192.168.2.3`
 
+On the aggregation server
+
+  ./agg\_server.py
 
 On each worker node:
 

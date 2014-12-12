@@ -73,7 +73,7 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
   unsigned int index, to_copy;
   unsigned long flags;
   size_t remaining;
-  ssize_t copied;
+  size_t copied;
 
   if (!atomic_dec_and_test(&max_refcnt)){
     printk(KERN_ERR "Attempted to read honeypot when it was already being read\n");
@@ -118,6 +118,7 @@ hp_fs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
         return -EFAULT;
       }
       buf_tail += to_copy;
+      index = (index + to_copy) % HP_BUFFER_SIZE;
       copied += to_copy * sizeof(struct hp_pkt);
       remaining -= to_copy;
     }

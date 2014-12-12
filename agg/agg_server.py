@@ -161,20 +161,25 @@ def write_output(signal, frame):
     out_f.write("\n==============================================\n")
     out_f.write("HONEYPOT STATISTICS @ %s\n" % str(datetime.now()))
     out_f.write("\nSPAMMERS:\n")
-    for key in spammers:
-        out_f.write('%s: %d\n' % (key, spammers[key]))
+    with spam_lock:
+        for key in spammers:
+            out_f.write('%s: %d\n' % (key, spammers[key]))
     out_f.write("\nPORTS:\n")
-    for key in ports:
-        out_f.write('%s: %d\n' % (key, ports[key]))
+    with port_lock:
+        for key in ports:
+            out_f.write('%s: %d\n' % (key, ports[key]))
     out_f.write("\nEVIL PACKETS:\n")
-    for key in evil:
-        out_f.write('%s: %d\n' % (key, evil[key]))
+    with evil_lock:
+        for key in evil:
+            out_f.write('%s: %d\n' % (key, evil[key]))
     out_f.write("\nPROTOCOLS:\n")
-    for key in protocols:
-        out_f.write('%s: %d\n' % (key, protocols[key]))
+    with pcls_lock:
+        for key in protocols:
+            out_f.write('%s: %d\n' % (key, protocols[key]))
     out_f.write("\nPERF STATS:\n")
-    for key in perf:
-        out_f.write('%s: %d\n' % (key, perf[key]))
+    with perf_lock:
+        for key in perf:
+            out_f.write('%s: %d\n' % (key, perf[key]))
     out_f.write("\nEND OF STATISTICS")
     out_f.write("\n==============================================\n")
 

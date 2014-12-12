@@ -1,0 +1,161 @@
+<html>
+<head>
+<title>CS3410 Spring 2014 Distributed Honeypot Lab</title>
+<style type="text/css"> 
+h3 { font-weight: bold; font-size: 14pt; }
+table { border-collapse: collapse; }
+table.indent { margin-left: 2em; }
+caption { font-size: 80%; padding-bottom: 3px; }
+tr { vertical-align: top; }
+img { padding-top: 1em; padding-left: 1em; }
+#code { font-family: monospace; }
+#dark { background-color: grey; }
+#instr-eg { border: 1px solid black; }
+#instr-eg tr td { border: 1px solid black; padding: 3px 3em 3px 3px; }
+#main-wrap { text-align: center; }
+#main { width: 48em; margin-left: auto; margin-right: auto; text-align: left; }
+#opcodes { width: 40em; }
+#opcodes tr td { font-family: monospace; font-size: 80%; text-align: center; border: 1px solid black; white-space: nowrap; }
+#heading { font-weight: bold; }
+#heading:after { content: "."; }
+</style>
+</head>
+<body>
+
+<div id="main-wrap">
+
+  <h1>Individual Lab -  Distributed Honeypot</h1>
+  <h3>CS3410</h3>
+  <h3>Due ...</h3>
+
+  <div id="main">
+
+    <!-- <p><b>Reminder: you must work alone for this lab.</b></p> -->
+
+    <h2>Overview</h2>
+
+    <p>We give you the source code to the MIPS simulator that we have been using in previous assignments. Modify the
+    simulator to simulate virtual memory, including a shared memory system call with copy-on-write semantics.</p>
+
+    <p>The original simulator code did not implement virtual memory: for each load and store, the simulator simply used
+    the address to index into a large array (allocated using <tt>malloc</tt>). We have modified the simulator in a few
+    simple ways to get you started. In particular, we have implemented the simulation for the hardware part of the the
+    virtual memory system, but not the software part:</p>
+    <ul>
+      <li>The simulator already supports physical memory using the existing code.</li>
+      <li>The simulator now calls <tt>create_address_space()</tt> before loading a program to create a new set of page
+      tables for the program.</li>
+      <li>The simulator stores a (physical) pointer to these page tables in Register 4 on Coprocessor 0, i.e. c0r4,
+      which is the standard MIPS <i>Context</i> register, also known as the <i>Page Table Base Register (PTBR)</i> on
+      x86.</li>
+      <li>The simulator now calls <tt>map_page()</tt> to create virtual mappings for the (virtual) memory segments of
+      the program being loaded.</li>
+      <li>For loads and stores, the simulator now traverses the page tables stored at c0r4 to translate virtual
+      addresses to physical addresses before it accesses the existing physical memory.</li>
+      <li>Simple stub code for the shared memory system call has been added so that the simulator calls
+      <tt>map_shared_page()</tt> as needed to create copy-on-write virtual mappings. <i>Implementing copy-on-write mappings is optional.</i></li>
+    </ul>
+
+    <p>What is left for you to do is implement the simulation of what would normally be done by the operating
+    system:</p>
+    <ul>
+      <li>Implement the <tt>create_address_space()</tt> function to create a virtual address space.</li>
+      <li>Implement the <tt>map_page()</tt> function to create virtual mappings.</li>
+      <li><i>(Optional)</i> Implement the <tt>map_shared_page()</tt> function call to support shared, copy-on-write virtual memory (do after map_page).</li>
+      <li><i>(Optional)</i> Implement the <tt>pfault()</tt> function call to support process killing and shared, copy-on-write virtual memory (if map_shared_page is implemented).</li>
+    </ul>
+
+    <p>We provide a header file that describes precisely what each function should do.</p>
+
+    <h2>What to submit</h2>
+
+    <p>Submit your well-commented <tt>vmem.c</tt> file and your <tt>vsimulate</tt> binary. You should not have to change any other files. Not including
+    comments, it is feasible to complete this lab in about 50 lines of code.</li>
+   
+    <h2>Overview of source files</h2>
+
+    <p>All of the source files for the simulator are available in the course directory in the CSUG Lab. The top level
+    directory contains the simulator source code and a Makefile for compiling it. You should copy the files to your own
+    directory to work on them:</p>
+    <pre> $ cp -r /courses/cs3410/lab4 ~/lab4
+ $ cd ~/lab4</pre>
+     <p>If you will be using the VM instead of CSUG then follow the instructions <a href="environment.html">here</a>.</p>
+    
+    <p> The <tt>mips</tt> subdirectory contains an example MIPS program that uses shared memory (you can also write your
+    own MIPS test programs if needed), and a Makefile for compiling it.</p>
+
+    <p>The most relevant files for you are:</p>
+    <ul>
+      <li><b>mem.h</b> Contains detailed descriptions and prototypes for the functions you must implement, along with
+      some prototypes for functions that you will likely need to call (e.g. to allocate physical pages).</li>
+      <li><b>vmem.c</b> You write this file. It should contain all of your implementation. The simulator will not
+      compile without it.</li>
+      <li><b>mips/hello.c</b> This compiles into a MIPS executable. If your virtual memory code is working correctly,
+      you should at least be able to run this program with no errors.</li>
+    </ul>
+
+    <p>The <tt>_mem_ref()</tt> function is used by the simulator to traverse the page tables on each memory access to a
+    virtual address; it is implemented in <b>mem.c</b>. You may find it helpful to at least look at this function to be
+    sure you understand what it is doing. Otherwise, most of the simulator code is not terribly interesting.  In rough
+    order of interest, are:</p>
+    <ul>
+      <li><b>pmem.c</b> Simulates physical memory as a big array of bytes.</li>
+      <li><b>syscalls.c</b> Simulates system calls.</li>
+      <li><b>mem.c</b> Helper routines for managing memory.</li>
+      <li><b>readelf.c</b> Parses and loads MIPS executable binaries.</li>
+      <li><b>run.c</b> Simulates the the CPU datapath.</li>
+      <li><b>main.c</b> Main entry point and command line processing.</li>
+      <li><b>sim.h</b> Prototypes and definitions.</li>
+      <li><b>debug.c</b> Interactive debugger.</li>
+      <li><b>disasm.c</b> Disassembler (used when debugging).</li>
+      <li><b>readline.c</b> Keyboard input (used when debugging).</li>
+      <li><b>readline.h</b> Keyboard input (used when debugging).</li>
+    </ul>
+  
+  <h2>Compiling the Code</h2>
+    
+  <p>cd to the skeleton code directory</p>
+  <pre>$ make</pre>
+  
+  <p>To compile the test program (only do this once) from the lab4/ directory:</p>
+  <pre>$ cd mips/
+$ make
+$ cd ..</pre>
+  
+  <p>To run the test program:</p>
+  <pre>./vsimulate mips/hello</pre>
+  
+  <h2>Tools</h2>
+
+    <p>We have slightly upgraded the simulator's built-in interactive debugger (the "-d" option) so that it can work
+    with simulated virtual memory. The "info memory" command now prints out information about both simulated physical
+    and virtual memory.  And the "x" command to examine memory has been replaced with two commands: "vx" for examining
+    simulated virtual memory; and "px" for examining simulated physical memory.</p>
+
+    <p>The simulator itself runs on x86 linux platforms, and so is compiled with regular <tt>gcc</tt> instead of
+    <tt>mipsel-linux-gcc</tt>. If you need to debug the simulator, try the <tt>gdb</tt> interactive debugger. You should
+    find that it has an interface much like the simulator's built-in MIPS debugger:</p>
+    <pre>    $ gdb vsimulate
+    GNU gdb 6.8-debian
+    Copyright (C) 2008 Free Software Foundation, Inc.
+    License GPLv3+: GNU GPL version 3 or later &lt;http://gnu.org/licenses/gpl.html&gt;
+    This is free software: you are free to change and redistribute it.
+    There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+    and "show warranty" for details.
+    This GDB was configured as "i486-linux-gnu"...
+    (gdb) break map_page 
+    Breakpoint 1 at 0x8050c0d: file vmem.c, line 25.
+    (gdb) run mips/hello
+    Starting program: /home/hw342/hw4/vsimulate mips/hello
+    [Thread debugging using libthread_db enabled]
+    [New Thread 0xb7ea16c0 (LWP 6124)]
+    [Switching to Thread 0xb7ea16c0 (LWP 6124)]
+    Breakpoint 1, map_page (context=290816, vaddr=4194304, writeable=0, executable=0) at vmem.c:25
+    (gdb)</pre>
+
+  </div>
+</div>
+</body>
+</html>
+
+

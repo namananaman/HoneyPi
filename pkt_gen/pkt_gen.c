@@ -82,7 +82,7 @@ time_t start_t;
 // let's aim for about N_LO<r<N_HI elements in each of the three lists
 // with M_LO=5%<r<30%=M_HI of packets matching each list
 // if the current list is too small, add with high probability
-// else add or subtract with 
+// else add or subtract with
 /*
 #define N_LO 40 // lists are around 50 +/- 10 elements long
 #define N_HI 60
@@ -140,7 +140,7 @@ void vec_init(volatile struct vec *v, int n, int target, int probk)
   v->target = target;
   v->probk = probk;
 }
-//adds a new key to the vec, inserting if possible otherwise doubling 
+//adds a new key to the vec, inserting if possible otherwise doubling
 void vec_add(volatile struct vec *v, unsigned int key, struct evilpkt *e_pkt)
 {
   if (v->count < v->capacity) {
@@ -265,7 +265,7 @@ struct evilpkt *pick_randp(volatile struct vec *v)
 //checks if a vec contains a key
 unsigned int vec_has(volatile struct vec *v, unsigned int key)
 {
-  for (int i = 0; i < v->count; i++) 
+  for (int i = 0; i < v->count; i++)
     if (v->elt[i].key == key)
       return 1;
   return 0;
@@ -363,19 +363,19 @@ struct evilpkt *fill_cmd(unsigned short cmd_id) {
     case HONEYPOT_PRINT:
       data = 0;
       break;
-    case HONEYPOT_ADD_SPAMMER: 
+    case HONEYPOT_ADD_SPAMMER:
       do {
         data = rand();
       } while (vec_has(&v_spam, data));
       break;
-    case HONEYPOT_ADD_EVIL: 
+    case HONEYPOT_ADD_EVIL:
       evil = malloc(sizeof(struct evilpkt));
       do {
         fill_rand(evil->data, &(evil->len), rand(), (unsigned short)(0xffff & rand()));
         data = djb2(evil->data, evil->len);
       } while (vec_has(&v_evil, data));
       break;
-    case HONEYPOT_ADD_VULNERABLE: 
+    case HONEYPOT_ADD_VULNERABLE:
       do {
         data = rand() & 0xffff;
       } while (vec_has(&v_vuln, data));
@@ -419,7 +419,7 @@ void vec_print(volatile struct vec *v, char *title, char *col)
   int n = v->count;
   if (!n) printf("   empty");
   else printf("     count  %s\n", col);
-  for (int i = 0; i < n; i++) 
+  for (int i = 0; i < n; i++)
     printf("   %12d  0x%x \n", v->elt[i].count, v->elt[i].key);
 }
 
@@ -434,7 +434,7 @@ void do_cmd(struct honeypot_command_packet *cmd, struct evilpkt *evil)
 {
   unsigned int data = ntohl(cmd->data_big_endian);
   switch(ntohs(cmd->cmd_big_endian)) {
-    case HONEYPOT_ADD_SPAMMER: 
+    case HONEYPOT_ADD_SPAMMER:
       if (opt_verbose_net > 1) printf("[net: honeypot add spammer: %x]\n", data);
       vec_add(&v_spam, data, NULL);
       break;
@@ -532,6 +532,8 @@ void print_stats(time_t end_t)
   printf("[net: total bytes: %d (%g Mbit/sec)]\n", b, b * 8.0 / difftime(end_t, start_t) / 1000000.0);
 }
 
+char do_random = 0;
+
 void net_send_pkts() {
 
   while(1) {
@@ -540,15 +542,17 @@ void net_send_pkts() {
     gettimeofday(&now_tv, NULL);
 
     //randomize dest_addr
-    dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
+    if (do_random){
+      dest_ip.s_addr = (dest_ip.s_addr & 0xFFFFFF) + (rand() & 0xFF000000);
+    }
 
     //pick what kind of packet you want to send
 
     //check whether the count for spammer/evil/vulnerable is under our target
 
-    int need_spam = (v_spam.count < v_spam.target) ? 1 : 0; 
-    int need_evil = (v_evil.count < v_evil.target) ? 1 : 0; 
-    int need_vuln = (v_vuln.count < v_vuln.target) ? 1 : 0; 
+    int need_spam = (v_spam.count < v_spam.target) ? 1 : 0;
+    int need_evil = (v_evil.count < v_evil.target) ? 1 : 0;
+    int need_vuln = (v_vuln.count < v_vuln.target) ? 1 : 0;
 
     //200 is our magic number
     int p_spam = need_spam ? 200 : 1;
@@ -567,7 +571,7 @@ void net_send_pkts() {
     if(difftime(now, last_print) > 10) {
       print_stats(now);
       fill_cmd(HONEYPOT_PRINT);
-      last_print = now; 
+      last_print = now;
     } else if (p < p_spam) {
       if (need_spam || (rr & 1))
         fill_cmd(HONEYPOT_ADD_SPAMMER);
@@ -658,7 +662,11 @@ void network_init(double data_rate, char* dest_address, int verbose)
 }
 
 int main(int argc, char* argv[]) {
-  if (argc == 4) {
+  if (argc >= 4) {
+    if (argc > 4){
+      printf("Using random IP distribution\n");
+      do_random = 1;
+    }
     network_init(strtod(argv[1], NULL), argv[2], atoi(argv[3]));
     net_send_pkts();
     return 0;

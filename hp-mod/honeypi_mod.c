@@ -273,7 +273,7 @@ static int __init hp_init(void)
 
   printk(KERN_DEBUG "hp_init\n");
 
-  status = alloc_chrdev_region(&hp_dev, 0, hp_minor, "honeypot");
+  status = alloc_chrdev_region(&hp_dev, 0, hp_minor, "honeypi");
   if (status <0) {
     printk(KERN_ERR "alloc_chrdev_retion failed %d\n", status);
     goto out;

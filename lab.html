@@ -1,7 +1,7 @@
 <html>
 <head>
 <title>CS3410 Spring 2014 Distributed Honeypot Lab</title>
-<style type="text/css"> 
+<style type="text/css">
 h3 { font-weight: bold; font-size: 14pt; }
 table { border-collapse: collapse; }
 table.indent { margin-left: 2em; }
@@ -34,9 +34,37 @@ img { padding-top: 1em; padding-left: 1em; }
 
     <h2>Overview</h2>
 
-    <p>In this lab you will be writing a program that reads packet summary data from the kernel and stores various statistics<!--, before sending them to an aggregation server-->.</p>
+    <p>In this lab, you will implement a distributed honeypot. A good amount of the work has already been
+      completed for you, but you will be required to write a userspace application that will read from
+      a kernel module and record the statistics, and have those statistics sent to a central server.
+      We've given you four folders; <b>agg</b>, <b>hp-user</b>, <b>hp-mod</b>, and <b>pkt_gen</b>.
+      The code you need to implement will go in <b>hp-user</b>.</p>
 
-    <p>We have written a kernel module that captures incoming packets and extracts certain information from them, notably the source and destination ports, the source and destination IP addresses, the protocol, packet's djb2 hash, and and an updated number of dropped packets. You can see the structure of a packet summary in hp-ioctl.h. </p>
+    <p>This is a distributed honeypot, which means that you will be expected to run a packet generator that
+      sends packets against a set of predefined IPs that will be running the kernel module. The first thing you'll want to do is make the packet generator and kernel module. The packet generator
+      can be found in the folder called pkt_gen, and the kernel module can be found in hp-mod. There is a
+      config file in pkt_gen, called gen.config, which contains a line-separated list of IPs to send packets
+      to. During testing, you'll need to edit these lines to be the IPs that you want the packet generator
+      to send packets to.</p>
+
+    <p>The honeypot works as follows:
+      <ul>
+        <li>The packet generator sends packets to the kernel module on a host</li>
+        <li>The kernel module stores this as a struct hp_pkt (defined in hp_ioctl.h) to be read later</li>
+        <li>The honeypi_read program will read this kernel module to get struct hp_pkt in userspace</li>
+        <li>The program will process the read hp_pkt</li>
+        <li>Occasionally, the program will send these statistics to the aggregation server (agg_server.py)</li>
+      </ul></p>
+
+    <p>You'll need to focus on the last three bullet points. In particular, honeypi_read needs to open the device
+    file for the kernel module, call read on it, and process the data.</p>
+
+    <p>All of your code will go in honeypi_read. Read through the comments first to figure out what
+      everything should be doing, and only start implementing once you're sure that you have a pretty good
+      grasp of how the honeypot works.</p>
+
+    <p>We have written a kernel module that captures incoming packets and extracts certain information from them, notably the source and destination ports, the source and destination IP addresses, the protocol, packet's djb2 hash, and and an updated number of dropped packets. You can see the structure of a packet summary in hp-ioctl.h.
+    </p>
     <p> You will be storing the following statistics:</p>
       <ul>
         <li>The number of packets recieved from certain spammer addresses</li>
@@ -50,22 +78,41 @@ img { padding-top: 1em; padding-left: 1em; }
       </ul>
     <p>In addition to data packets, your honeypot will occassionally recieve command packets, telling it to update its internal data structures in the specified manner. The description of each command is as follows: </p>
     <ul>
-      <li>HONEYPOT_ADD_SPAMMER_BE: start tracking the specified spammer address</li>
-      <li>HONEYPOT_DEL_SPAMMER_BE: stop tracking the specified spammer address</li>
-      <li>HONEYPOT_ADD_VULNERABLE_BE: start tracking the specified vulnerable port</li>
-      <li>HONEYPOT_DEL_VULNERABLE_BE: stop tracking the specified vulnerable port</li>
-      <li>HONEYPOT_ADD_EVIL_BE: start tracking the specified evil hash</li>
-      <li>HONEYPOT_DEL_EVIL_BE: stop tracking the specified evil hash</li>
-      <li>HONEYPOT_PRINT_BE: print the current statistics stored </li>
+      <li>HONEYPOT_ADD_SPAMMER: start tracking the specified spammer address</li>
+      <li>HONEYPOT_DEL_SPAMMER: stop tracking the specified spammer address</li>
+      <li>HONEYPOT_ADD_VULNERABLE: start tracking the specified vulnerable port</li>
+      <li>HONEYPOT_DEL_VULNERABLE: stop tracking the specified vulnerable port</li>
+      <li>HONEYPOT_ADD_EVIL: start tracking the specified evil hash</li>
+      <li>HONEYPOT_DEL_EVIL: stop tracking the specified evil hash</li>
+      <li>HONEYPOT_PRINT: print the current statistics stored and send them to the aggregator </li>
     </ul>
-    <p>You can figure out whether a packet is a command packet or a data packet by checking whether the cmd field of the hp_pkt is zero. Command packets have their own struct also defined in hp-ioctl.h.</p>
+    <p>You can figure out whether a packet is a command packet or a data packet by checking whether the cmd field of the hp_pkt is zero. Command packets have their own struct also defined in hp-ioctl.h. honeypi_read can
+      determine what server to send its statistics to via the honeypi.config file in hp-user. Keep in mind
+      that honeypi_read always keeps track of the protocol of each packet, and will never delete that
+      information.</p>
+
+    <p>The packet generator only sends command packets to a single host, but those command packets should
+      be broadcasted over the network to all other machines running honeypi_read. You can do this by changing
+      the command packet type to have _BE at the end (i.e. HONEYPOT_ADD_SPAMMER_BE) before broadcasting the
+      packet.</p>
+
+    <p>agg_server.py expects the following:
+      <ul>
+        <li>You must send "CLEAR_STATISTICS\n" when honeypi_read is first started to tell the aggregator
+          that it shouldn't used any cached statistics from this host.</li>
+        <li>You must send one of "Spammers:\n", "Protocols:\n", "Evil:\n", or "Ports:\n" before sending
+          information about the applicable statistics.</li>
+        <li>Each line after one of the above will be followed by "key:count\n", where key is the
+          key for the statistic (so, the source IP, port, protocol, etc), and count is the number
+          of times your program has seen that key.</li>
+      </ul></p>
+
     <!--<p>You will also be writing an aggregation server for your Raspberry Pi to send its collected statistics too. We will be testing your aggregator with multiple clients, so make sure that you make it thread-safe!</p>-->
 
     <h2>What to submit</h2>
 
     <p>Submit your well-commented <tt>honeypi_read.c</tt>, <tt>net.c</tt> file and your <tt>honeypi_read</tt> binary.
-    
-   
+
     <h2>Overview of source files</h2>
 
     <p>All of the source files for the kernel module and packet generator are available in the course directory in the CSUG Lab. The top level
@@ -74,7 +121,7 @@ img { padding-top: 1em; padding-left: 1em; }
     <pre> $ cp -r /courses/cs3410/lab_honeypot ~/lab_honeypot
  $ cd ~/lab4</pre>
      <p>If you will be using the VM instead of CSUG then follow the instructions <a href="environment.html">here</a>.</p>
-    
+
     <p> The <tt>hp-mod</tt> subdirectory contains the kernel module, and a Makefile for compiling it. An example honeypi_read program is in hp-user. It includes the code that reads from the kernel module (but nothing else)</p>
 
     <p>The most relevant files for you are:</p>
@@ -85,30 +132,39 @@ img { padding-top: 1em; padding-left: 1em; }
     </ul>
 
   <h2>Compiling the Code</h2
-    
+
   <p>cd to the skeleton code directory</p>
-  <pre>$ make</pre> 
-  <p>On a different machine (or window)</p> 
-    <pre>./agg_server.py</pre>
-  
+  <pre>$ make</pre>
+  <p>On a different machine (or window)</p>
+    <pre>cd agg &amp;&amp; ./agg_server.py</pre>
+
+  <p>On yet another machine/window</p>
+    <pre>cd pkt_gen &amp;&amp; ./pkt_gen [mpbs]</pre>
+    Where mpbs is the desired megabits per second you want to send to each host.
+    Don't forget to edit gen.config!
+
   <p>To install the kernel module :</p>
     <pre>cd hp-mod</pre>
     <pre>sudo insmod honeypi.ko</pre>
+    <pre>ifconfig eth0 promisc</pre>
+    Note that eth0 might need to be swapped with whatever your main network interface is called.
+    You can list your network interfaces by typing `ifconfig -a`, and whatever interface has your
+    main network IP is the one you want to swap out eth0 for.
 
   <p>You need to find out what the major number of the module is, this can
   be done by running </p>
-    <pre>cat /proc/devices</pre> 
+    <pre>cat /proc/devices</pre>
   <p>and finding the entry for honeypi</p>
 
   <p>Once you have the major number. Run:</p>
 
     <pre>mknod /dev/honeypi c "major number"</pre>
 
-  This creates the device file.
+  This creates the device file that you'll open in honeypi_read.
 
-  <p>To run the local honeypot/p>
+  <p>To run the local honeypot:
   <pre>cd hp-user</pre>
-  <pre>sudo ./honeypi_read</pre>
+  <pre>sudo ./honeypi_read</pre></p>
   <h2>Help</h2>
 
   There are many resources available to help you with Linux network programming.

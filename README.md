@@ -15,7 +15,7 @@ This will build the kernel module, userspace program, and packet generator. Alte
 Running
 =======
 
-On each host run `sudo setup\_network.sh`. This will make sure the UDP buffers are of sufficient size.
+On each host run `sudo setup_network.sh`. This will make sure the UDP buffers are of sufficient size.
 
 Make sure the config file 'hp-user/honeypi.config' has the correct IP address, the address
 and ports of the pi must be in the first lines and the address and port of the aggregator
@@ -32,9 +32,9 @@ And check the routes with `show ip route`.
 
 On the aggregation server
 
-  ./agg\_server.py
+  ./agg_server.py
 
-This must be started before honeypi\_read.
+This must be started before honeypi_read.
 
 On each worker node:
 
@@ -46,28 +46,28 @@ On each worker node:
 
   Once you have the major number. Run:
 
-    mknod /dev/honeypi c "major\_number"
+    mknod /dev/honeypi c "major_number"
 
   This creates the device file. Generally this'll be `mknod /dev/honeypi c 248 0`.
 
   Finally run
 
-  ./honeypi\_read as root. You must be in the same directory as "honeypi.config"
+  ./honeypi_read as root. You must be in the same directory as "honeypi.config"
 
 On the packet generator host:
 
-  run ./pkt\_gen <mbps> 192.168.1.0 0 1
+  run ./pkt_gen <mbps> 192.168.1.0 0 1
 
-Alternatively, run `./pkt\_gen <mbps> <specific\_ip> 0` to send to a specific host.
+Alternatively, run `./pkt_gen <mbps> <specific_ip> 0` to send to a specific host.
 
 
 What are all these folders?
 ===========================
 
-agg: contains aggregator server. agg\_client.py was used previously
-     but is deprecated (honeypi\_read sends messages directly)
+agg: contains aggregator server. agg_client.py was used previously
+     but is deprecated (honeypi_read sends messages directly)
 hp-mod: Kernel module.
 hp-user: Userspace program to read from kernel module.
-pkt\_gen: packet generator
+pkt_gen: packet generator
 everything else: expendable
 

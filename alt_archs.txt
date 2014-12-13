@@ -1,0 +1,22 @@
+There's a couple other approaches that we thought about that didn't really work out.
+They're listed here!
+
+- Broadcast packets to the whole network, come up with some round robin scheme for Pis
+  determined by Paxos (so Pis could go up and down on network) to figure out what to skip
+  and what to accept, but Paxos is hard and couldn't think of a good way to determine
+  what to drop with low overhead
+
+- Capture packets with NetMap super early, but couldn't recompile any Pi kernel (see paper);
+  the goal would be to avoid getting stuff in sk_buff so we didn't have the packet
+  already copied in a kernel memory page and get it/map it in userspace instead.
+  It's entirely possible that however the close-source Ethernet-to-USB driver on the Pi
+  works would shoot this out of the water anyway
+
+- GPU hashing packets, but GPU code is hard and we'd have to get packets to userspace
+  to get online implementations to work, but can't really do that w/o copying packet
+  as it was already in a sk_buff (see paper)
+
+- Distributing the Pis across multiple, large subnets; i.e. put one in Gates,
+  one on north campus, one on west campus, etc., so we could get a REALLY distributed
+  honeypot that could capture a wide range of network traffic! We didn't really have
+  the time to do this, but it'd be a really cool thing to try

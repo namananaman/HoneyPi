@@ -34,38 +34,32 @@ img { padding-top: 1em; padding-left: 1em; }
 
     <h2>Overview</h2>
 
-    <p>We give you the source code to the MIPS simulator that we have been using in previous assignments. Modify the
-    simulator to simulate virtual memory, including a shared memory system call with copy-on-write semantics.</p>
+    <p>In this lab you will be writing a program that reads packet summary data from the kernel and stores various statistics<!--, before sending them to an aggregation server-->.</p>
 
-    <p>The original simulator code did not implement virtual memory: for each load and store, the simulator simply used
-    the address to index into a large array (allocated using <tt>malloc</tt>). We have modified the simulator in a few
-    simple ways to get you started. In particular, we have implemented the simulation for the hardware part of the the
-    virtual memory system, but not the software part:</p>
+    <p>We have written a kernel module that captures incoming packets and extracts certain information from them, notably the source and destination ports, the source and destination IP addresses, the protocol, packet's djb2 hash, and and an updated number of dropped packets. You can see the structure of a packet summary in hp-ioctl.h. </p>
+    <p> You will be storing the following statistics:</p>
+      <ul>
+        <li>The number of packets recieved from certain spammer addresses</li>
+        <li>The number of packets sent to certain vulnerable ports</li>
+        <li>The number of packets with one of the known "evil" hashes, marking them as dangerous</li>
+        <li>The number of packets that have been dropped by the kernel</li>
+        <li>The number of packets received by protocol</li>
+        <li>The total number of packets recieved</li>
+        <li>The total number of bytes received</li>
+        <li>The average data rate</li>
+      </ul>
+    <p>In addition to data packets, your honeypot will occassionally recieve command packets, telling it to update its internal data structures in the specified manner. The description of each command is as follows: </p>
     <ul>
-      <li>The simulator already supports physical memory using the existing code.</li>
-      <li>The simulator now calls <tt>create_address_space()</tt> before loading a program to create a new set of page
-      tables for the program.</li>
-      <li>The simulator stores a (physical) pointer to these page tables in Register 4 on Coprocessor 0, i.e. c0r4,
-      which is the standard MIPS <i>Context</i> register, also known as the <i>Page Table Base Register (PTBR)</i> on
-      x86.</li>
-      <li>The simulator now calls <tt>map_page()</tt> to create virtual mappings for the (virtual) memory segments of
-      the program being loaded.</li>
-      <li>For loads and stores, the simulator now traverses the page tables stored at c0r4 to translate virtual
-      addresses to physical addresses before it accesses the existing physical memory.</li>
-      <li>Simple stub code for the shared memory system call has been added so that the simulator calls
-      <tt>map_shared_page()</tt> as needed to create copy-on-write virtual mappings. <i>Implementing copy-on-write mappings is optional.</i></li>
+      <li>HONEYPOT_ADD_SPAMMER_BE: start tracking the specified spammer address</li>
+      <li>HONEYPOT_DEL_SPAMMER_BE: stop tracking the specified spammer address</li>
+      <li>HONEYPOT_ADD_VULNERABLE_BE: start tracking the specified vulnerable port</li>
+      <li>HONEYPOT_DEL_VULNERABLE_BE: stop tracking the specified vulnerable port</li>
+      <li>HONEYPOT_ADD_EVIL_BE: start tracking the specified evil hash</li>
+      <li>HONEYPOT_DEL_EVIL_BE: stop tracking the specified evil hash</li>
+      <li>HONEYPOT_PRINT_BE: print the current statistics stored </li>
     </ul>
-
-    <p>What is left for you to do is implement the simulation of what would normally be done by the operating
-    system:</p>
-    <ul>
-      <li>Implement the <tt>create_address_space()</tt> function to create a virtual address space.</li>
-      <li>Implement the <tt>map_page()</tt> function to create virtual mappings.</li>
-      <li><i>(Optional)</i> Implement the <tt>map_shared_page()</tt> function call to support shared, copy-on-write virtual memory (do after map_page).</li>
-      <li><i>(Optional)</i> Implement the <tt>pfault()</tt> function call to support process killing and shared, copy-on-write virtual memory (if map_shared_page is implemented).</li>
-    </ul>
-
-    <p>We provide a header file that describes precisely what each function should do.</p>
+    <p>You can figure out whether a packet is a command packet or a data packet by checking whether the cmd field of the hp_pkt is zero. Command packets have their own struct also defined in hp-ioctl.h.</p>
+    <!--<p>You will also be writing an aggregation server for your Raspberry Pi to send its collected statistics too. We will be testing your aggregator with multiple clients, so make sure that you make it thread-safe!</p>-->
 
     <h2>What to submit</h2>
 
